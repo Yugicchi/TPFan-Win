@@ -53,9 +53,10 @@ TPFan-Win/
 ## Roadmap
 
 - System tray integration
-- ACPI fan control
-- Hardware testing on T480
-- Unit tests
+- Hardware testing on T480 (EC override end-to-end)
+- Unit tests (mapping / WMI / IPC serialization)
+- Curve calibration + custom curves
+- MSIX signed release
 
 ## License
 

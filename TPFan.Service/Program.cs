@@ -16,8 +16,31 @@ class Program
 
         try
         {
-            using var fanProvider = new T480FanProvider();
+            // Wire up the EC fan controller. It self-reports availability: if
+            // inpoutx64.dll is missing or we are not elevated, IsAvailable
+            // is false and the service degrades gracefully to read-only mode.
+            var fanController = new EcFanController();
+            Console.WriteLine(
+                $"EC fan control: {(fanController.IsAvailable ? "AVAILABLE" : "unavailable")}");
+            if (!fanController.IsAvailable)
+            {
+                Console.WriteLine(
+                    "  -> ensure inpoutx64.dll is beside the executable and the service");
+                Console.WriteLine(
+                    "     is run as Administrator (and that inpoutx64.sys is installed).");
+            }
+
+            using var fanProvider = new T480FanProvider(fanController);
             using var pipeServer = new FanServicePipeServer(fanProvider);
+
+            // Ctrl+C handler returns the fan to auto control so an abrupt
+            // stop does not leave the fan pinned at the user's last override.
+            Console.CancelKeyPress += (_, e) =>
+            {
+                e.Cancel = false;
+                fanProvider.ResetFanOverrideAsync().GetAwaiter().GetResult();
+                Console.WriteLine("\nFan override released. Exiting.");
+            };
 
             // Read initial status
             var status = await fanProvider.GetFanStatusAsync();

@@ -35,18 +35,13 @@ public class FanServicePipeServer : IFanServiceContract, IDisposable
 
     public async Task<bool> SetFanSpeedOverrideAsync(int speedPercent)
     {
-        // TODO: Implement ACPI fan control
-        // This requires direct EC (Embedded Controller) access
-        // which is currently not implemented
-        await Task.Delay(100); // Simulate operation
-        return true;
+        if (speedPercent is < 0 or > 100) return false;
+        return await _fanProvider.SetFanSpeedOverrideAsync(speedPercent);
     }
 
     public async Task<bool> ResetFanOverrideAsync()
     {
-        // TODO: Reset fan to automatic control
-        await Task.Delay(100);
-        return true;
+        return await _fanProvider.ResetFanOverrideAsync();
     }
 
     public async Task<bool> IsServiceRunningAsync()

@@ -13,10 +13,12 @@ namespace TPFan.Service.Hardware;
 public class T480FanProvider : IDisposable
 {
     private readonly ManagementEventWatcher? _tempWatcher;
+    private readonly IFanController? _fanController;
     private int _lastTemperature = 0;
     private int _lastFanSpeed = 0;
+    private bool _isOverrideActive;
 
-    public T480FanProvider()
+    public T480FanProvider(IFanController? fanController = null)
     {
         // Initialize WMI watchers for real-time updates
         try
@@ -28,6 +30,7 @@ public class T480FanProvider : IDisposable
         {
             // WMI may not be available in all environments
         }
+        _fanController = fanController;
     }
 
     /// <summary>
@@ -174,10 +177,48 @@ public class T480FanProvider : IDisposable
             TemperatureCelsius = await GetCpuTemperatureAsync(),
             SpeedPercent = await GetFanSpeedPercentAsync(),
             Rpm = await GetFanRpmAsync(),
-            IsOverrideActive = false,
-            OverrideSpeedPercent = null,
+            IsOverrideActive = _isOverrideActive,
+            OverrideSpeedPercent = _isOverrideActive ? _lastFanSpeed : null,
             ReadAt = DateTime.UtcNow
         };
+    }
+
+    /// <summary>
+    /// Override the firmware auto-control and force a fixed fan speed.
+    /// Returns false (and logs) when no <see cref="IFanController"/> was
+    /// injected, e.g. when the service is running in read-only mode.
+    /// </summary>
+    public async Task<bool> SetFanSpeedOverrideAsync(int speedPercent)
+    {
+        if (_fanController is null)
+        {
+            System.Diagnostics.Debug.WriteLine(
+                "T480FanProvider: no fan controller available; override is a no-op.");
+            return false;
+        }
+
+        var ok = await _fanController.SetFanSpeedAsync(speedPercent);
+        if (ok)
+        {
+            _isOverrideActive = true;
+            _lastFanSpeed = Math.Clamp(speedPercent, 0, 100);
+        }
+        return ok;
+    }
+
+    /// <summary>
+    /// Release the manual override and return the fan to firmware auto control.
+    /// </summary>
+    public async Task<bool> ResetFanOverrideAsync()
+    {
+        if (_fanController is null) return false;
+
+        var ok = await _fanController.ResetToAutoAsync();
+        if (ok)
+        {
+            _isOverrideActive = false;
+        }
+        return ok;
     }
 
     /// <summary>
@@ -201,6 +242,20 @@ public class T480FanProvider : IDisposable
 
     public void Dispose()
     {
+        // Best-effort: hand the fan back to the firmware before tearing down
+        // the watchers, so a Ctrl+C or service stop does not leave the fan
+        // pinned at whatever the user last set.
+        if (_isOverrideActive && _fanController is not null)
+        {
+            try
+            {
+                _fanController.ResetToAutoAsync().GetAwaiter().GetResult();
+            }
+            catch
+            {
+                // Swallow — Dispose must not throw.
+            }
+        }
         _tempWatcher?.Dispose();
     }
 }

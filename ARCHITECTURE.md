@@ -137,25 +137,54 @@ Settings:
 
 ## Next Steps
 
-1. **Implement ACPI Fan Control**
-   - Research T480 ACPI methods for fan control
-   - Implement `SetFanSpeedOverrideAsync()` with EC access
-   - May require kernel driver or privileged service
-
-2. **System Tray Integration**
+1. **System Tray Integration**
    - Add tray icon with status indicator
    - Right-click menu for quick presets
    - Hover tooltip with current temp/speed
 
-3. **Curve Calibration**
+2. **Curve Calibration**
    - Stress test to verify detected curve accuracy
    - Allow user to adjust curve points
    - Save custom curves
 
-4. **Testing on T480 Hardware**
+3. **Testing on T480 Hardware**
    - Verify WMI queries work on actual hardware
    - Calibrate temperature thresholds
-   - Test fan control stability
+   - Test fan control stability (incl. EC override end-to-end)
+
+## Fan Override — EC Path (T480)
+
+The new hot path for `SetFanSpeedOverrideAsync` is:
+
+```
+MainPage.xaml → MainViewModel (slider snap)
+    → FanServiceClient (Named Pipe, JSON)
+    → FanServicePipeServer.SetFanSpeedOverrideAsync
+        → T480FanProvider.SetFanSpeedOverrideAsync (validates, tracks _isOverrideActive)
+            → IFanController / EcFanController.SetFanSpeedAsync
+                → InpOut32 P/Invoke (Out32/Inp32) via inpoutx64.dll + inpoutx64.sys
+                → EC command port 0x66 / data port 0x62 (ACPI EC protocol)
+                → EC offset 0x2F (level), 0x31 (mode), 0x32 (reset)
+            → level ↔ percent mapping (FanControlOptions.MaxLevel=7, 0..100)
+        → FanStatus.IsOverrideActive / OverrideSpeedPercent updated
+```
+
+Read path (temperature/RPM) still goes via WMI `Win32_TemperatureProbe` / `Win32_Fan`
+and does not depend on the EC driver — the service can therefore run in read-only
+mode when not elevated or when the driver is absent. See SETUP.md "EC Fan Control
+(T480)".
+
+### ACPI Fan Control (implemented via EC)
+
+- `IFanController` — abstraction boundary for EC access.
+- `EcFanController` — InpOut32 implementation + T480 EC register constants
+  (0x2F/0x31/0x32, MaxLevel=7). Maps 0..100 percent ↔ 0..7 EC levels.
+- `FanControlOptions` — overrides per-BIOS EC offsets if the T480 revision
+  exposes the fan at a different offset.
+- `FanServicePipeServer` now delegates instead of returning a stub, and
+  validates `0..100`.
+- `Program.cs` creates `EcFanController`, logs `IsAvailable`, and hands Ctrl+C
+  back to firmware auto control (`ResetToAutoAsync` from `Dispose`).
 
 ## Build & Run
 

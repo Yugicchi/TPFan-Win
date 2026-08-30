@@ -22,4 +22,15 @@
     <PackageReference Include="Microsoft.Win32.Registry" Version="5.0.0" />
   </ItemGroup>
 
+  <!-- Native dependency for EC fan control (InpOut32).
+       The 64-bit build expects inpoutx64.dll beside the executable.
+       Obtain the pair inpoutx64.dll + inpoutx64.sys from
+       https://www.highrez.co.uk/Downloads/InpOut32/ / InstallDriver.exe,
+       or build from the InpOut32 source. The files are intentionally not
+       vendored — see SETUP.md for the install step. If native/inpoutx64.dll
+       is present in the repo, it is copied to the output directory. -->
+  <ItemGroup>
+    <None Include="native\**" CopyToOutputDirectory="PreserveNewest" Condition="Exists('native\inpoutx64.dll')" />
+  </ItemGroup>
+
 </Project>
