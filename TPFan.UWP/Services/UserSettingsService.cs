@@ -14,7 +14,7 @@ public class UserSettingsService
     public UserSettingsService()
     {
         _settings = ApplicationData.Current.LocalSettings
-            .CreateContainer(SettingsContainerName, ApplicationDataContainerCreateDisposition.Always);
+            .CreateContainer(SettingsContainerName, Windows.Storage.ApplicationDataContainerCreateDisposition.Always);
     }
 
     public bool IsOverrideEnabled
