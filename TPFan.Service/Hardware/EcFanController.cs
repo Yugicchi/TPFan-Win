@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Security.Principal;
 using System.Threading;
@@ -53,8 +54,32 @@ public class EcFanController : IFanController
     public EcFanController(FanControlOptions? options = null)
     {
         _options = options ?? new FanControlOptions();
-        _dllPresent = NativeLibrary.Exists(InpOutDll) || File.Exists($"{InpOutDll}.dll");
+        _dllPresent = DetectInpOutDll();
         _elevated = IsRunningAsAdministrator();
+    }
+
+    /// <summary>
+    /// Probe a few likely locations for the InpOut32 shim. We cannot use
+    /// <c>NativeLibrary.TryLoad</c> here without making a successful load
+    /// a hard requirement, so we just confirm the file is on disk.
+    /// </summary>
+    private static bool DetectInpOutDll()
+    {
+        try
+        {
+            var baseDir = AppContext.BaseDirectory;
+            var candidates = new[]
+            {
+                Path.Combine(baseDir, $"{InpOutDll}.dll"),
+                Path.Combine(baseDir, "native", $"{InpOutDll}.dll"),
+                Path.Combine(Environment.SystemDirectory, $"{InpOutDll}.dll"),
+            };
+            return candidates.Any(File.Exists);
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     public bool IsAvailable => _dllPresent && _elevated;
