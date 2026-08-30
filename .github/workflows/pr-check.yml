@@ -11,7 +11,7 @@ jobs:
 
     steps:
     - name: Check PR title
-      uses: amannn/action-semantic-pull-request@v5
+      uses: amannn/action-semantic-pull-request@v6
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
@@ -31,7 +31,7 @@ jobs:
           Example: "feat: Add system tray support"
 
     - name: Check for linked issues
-      uses: actions/github-script@v7
+      uses: actions/github-script@v9
       with:
         script: |
           const body = context.payload.pull_request.body || '';
@@ -50,11 +50,11 @@ jobs:
 
     steps:
     - name: Checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
 
     - name: Get changed files
       id: changed-files
-      uses: tj-actions/changed-files@v44
+      uses: tj-actions/changed-files@v47
 
     - name: Check PR size
       run: |
