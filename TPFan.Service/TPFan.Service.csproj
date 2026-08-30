@@ -5,10 +5,11 @@
     <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
     <RootNamespace>TPFan.Service</RootNamespace>
     <AssemblyName>TPFan.Service</AssemblyName>
+    <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
     <UseWindowsDesktopSdk>true</UseWindowsDesktopSdk>
-    <RuntimeIdentifier>win10-x64</RuntimeIdentifier>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>false</SelfContained>
   </PropertyGroup>
 

@@ -1,3 +1,6 @@
+using System;
+using System.Linq;
+
 namespace TPFan.Shared.Models;
 
 /// <summary>
@@ -74,6 +77,6 @@ public record FanCurve
         var tempDiff = temperatureCelsius - lowerPoint.TemperatureCelsius;
 
         var interpolated = lowerPoint.SpeedPercent + (speedRange * tempDiff) / tempRange;
-        return (int)Math.Round(interpolated);
+        return (int)Math.Round((double)interpolated);
     }
 }

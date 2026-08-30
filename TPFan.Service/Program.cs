@@ -1,10 +1,12 @@
 // Placeholder for service entry point
 // Will be implemented with console app or Windows Service template
 
-namespace TPFan.Service;
+using System;
+using System.Threading.Tasks;
+using TPFan.Service.Hardware;
+using TPFan.Service.IPC;
 
-using Hardware;
-using IPC;
+namespace TPFan.Service;
 
 class Program
 {

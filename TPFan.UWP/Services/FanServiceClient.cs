@@ -1,13 +1,13 @@
-namespace TPFan.UWP.Services;
-
 using System;
 using System.IO;
 using System.IO.Pipes;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
-using Shared.Contracts;
-using Shared.Models;
+using TPFan.Shared.Contracts;
+using TPFan.Shared.Models;
+
+namespace TPFan.UWP.Services;
 
 /// <summary>
 /// Client untuk communicate dengan background service via Named Pipes

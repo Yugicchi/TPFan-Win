@@ -1,7 +1,10 @@
-namespace TPFan.Service.Hardware;
-
+using System;
+using System.Collections.Generic;
 using System.Management;
-using Shared.Models;
+using System.Threading.Tasks;
+using TPFan.Shared.Models;
+
+namespace TPFan.Service.Hardware;
 
 /// <summary>
 /// Provides fan curve detection and status reading via WMI

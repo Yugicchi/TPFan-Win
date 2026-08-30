@@ -1,6 +1,7 @@
-namespace TPFan.Shared.Contracts;
+using System.Threading.Tasks;
+using TPFan.Shared.Models;
 
-using Models;
+namespace TPFan.Shared.Contracts;
 
 /// <summary>
 /// Contract for communication between UWP app and background service

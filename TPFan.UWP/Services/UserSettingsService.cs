@@ -7,14 +7,11 @@ using Windows.Storage;
 /// </summary>
 public class UserSettingsService
 {
-    private const string SettingsContainerName = "UserSettings";
-
     private readonly ApplicationDataContainer _settings;
 
     public UserSettingsService()
     {
-        _settings = ApplicationData.Current.LocalSettings
-            .CreateContainer(SettingsContainerName, ApplicationDataContainerCreateDisposition.Always);
+        _settings = ApplicationData.Current.LocalSettings;
     }
 
     public bool IsOverrideEnabled
