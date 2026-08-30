@@ -1,0 +1,114 @@
+name: Build and Test
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+env:
+  DOTNET_VERSION: '8.0.x'
+  CONFIGURATION: Release
+
+jobs:
+  build:
+    name: Build Solution
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+
+    - name: Cache NuGet packages
+      uses: actions/cache@v4
+      with:
+        path: ~/.nuget/packages
+        key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
+        restore-keys: |
+          ${{ runner.os }}-nuget-
+
+    - name: Restore dependencies
+      run: dotnet restore TPFan.sln
+
+    - name: Build Shared project
+      run: dotnet build TPFan.Shared/TPFan.Shared.csproj --configuration ${{ env.CONFIGURATION }} --no-restore
+
+    - name: Build Service project
+      run: dotnet build TPFan.Service/TPFan.Service.csproj --configuration ${{ env.CONFIGURATION }} --no-restore
+
+    - name: Build UWP project
+      run: dotnet build TPFan.UWP/TPFan.UWP.csproj --configuration ${{ env.CONFIGURATION }} --no-restore --verbosity minimal
+      continue-on-error: true  # UWP build may fail without full SDK, but service is the priority
+
+  test:
+    name: Run Tests
+    runs-on: windows-latest
+    needs: build
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+
+    - name: Restore dependencies
+      run: dotnet restore
+
+    - name: Run tests
+      run: |
+        if (Test-Path "*Tests/*.csproj" -PathType Leaf) {
+          dotnet test --configuration ${{ env.CONFIGURATION }} --no-restore --verbosity minimal
+        } else {
+          Write-Host "No test projects found - skipping"
+        }
+      shell: pwsh
+
+  package:
+    name: Package Artifacts
+    runs-on: windows-latest
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+
+    - name: Publish Service (Self-contained)
+      run: dotnet publish TPFan.Service/TPFan.Service.csproj --configuration ${{ env.CONFIGURATION }} --runtime win10-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true --output ./publish/service
+
+    - name: Upload Service artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: TPFan-Win-Service
+        path: ./publish/service
+        retention-days: 30
+
+    - name: Create package info
+      run: |
+        echo "Build completed at: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" > BUILD_INFO.txt
+        echo "Commit: ${{ github.sha }}" >> BUILD_INFO.txt
+        echo "Branch: ${{ github.ref_name }}" >> BUILD_INFO.txt
+        echo "Run ID: ${{ github.run_id }}" >> BUILD_INFO.txt
+        Get-Content BUILD_INFO.txt
+      shell: pwsh
+
+    - name: Upload build info
+      uses: actions/upload-artifact@v4
+      with:
+        name: Build-Info
+        path: BUILD_INFO.txt
+        retention-days: 30

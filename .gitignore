@@ -1,0 +1,35 @@
+# Visual Studio
+.vs/
+bin/
+obj/
+*.user
+*.suo
+
+# Build outputs
+Debug/
+Release/
+x64/
+x86/
+*.exe
+*.dll
+*.pdb
+
+# NuGet
+*.nupkg
+.nuget/
+
+# Windows
+Thumbs.db
+
+# Application
+*.db
+*.log
+AppSettings.local.json
+
+# IDE
+.vscode/
+.idea/
+
+# Temp
+*.tmp
+~$*

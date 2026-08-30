@@ -1,0 +1,79 @@
+name: PR Validation
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+
+jobs:
+  validate:
+    name: Validate PR
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Check PR title
+      uses: amannn/action-semantic-pull-request@v5
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        types: |
+          feat
+          fix
+          docs
+          test
+          chore
+          refactor
+          style
+          ci
+        requireScope: false
+        subjectPattern: ^[A-Z].+$
+        subjectPatternError: |
+          Subject must start with uppercase letter.
+          Example: "feat: Add system tray support"
+
+    - name: Check for linked issues
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const body = context.payload.pull_request.body || '';
+          const hasLinkedIssue = body.includes('Closes #') ||
+                                 body.includes('Fixes #') ||
+                                 body.includes('Resolves #');
+
+          if (!hasLinkedIssue) {
+            console.log('Warning: No linked issue found in PR description');
+            // Don't fail, just warn
+          }
+
+  size-check:
+    name: Check PR Size
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Get changed files
+      id: changed-files
+      uses: tj-actions/changed-files@v44
+
+    - name: Check PR size
+      run: |
+        files="${{ steps.changed-files.outputs.all_changed_files }}"
+        count=$(echo "$files" | wc -l)
+
+        echo "PR changes $count files"
+
+        if [ $count -gt 50 ]; then
+          echo "::warning::Large PR detected ($count files). Consider splitting into smaller PRs."
+        fi
+
+  draft-check:
+    name: Check Draft Status
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Fail if draft
+      if: github.event.pull_request.draft == true
+      run: |
+        echo "PR is marked as draft. CI will not run."
+        exit 1
