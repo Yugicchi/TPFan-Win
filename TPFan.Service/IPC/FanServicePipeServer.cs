@@ -1,9 +1,12 @@
-namespace TPFan.Service.IPC;
-
+using System;
 using System.Text;
 using System.Text.Json;
-using Shared.Contracts;
-using Shared.Models;
+using System.Threading.Tasks;
+using TPFan.Service.Hardware;
+using TPFan.Shared.Contracts;
+using TPFan.Shared.Models;
+
+namespace TPFan.Service.IPC;
 
 /// <summary>
 /// Named Pipe server untuk IPC komunikasi antara UWP app dan background service

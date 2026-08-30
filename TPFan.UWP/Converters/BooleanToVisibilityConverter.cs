@@ -1,7 +1,8 @@
-namespace TPFan.UWP.Converters;
-
+using System;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Data;
+
+namespace TPFan.UWP.Converters;
 
 /// <summary>
 /// Converts boolean to Visibility
