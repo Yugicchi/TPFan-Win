@@ -1,5 +1,7 @@
 using System;
+using System.Diagnostics;
 using System.Linq;
+using System.Management;
 using LibreHardwareMonitor.Hardware;
 
 namespace TPFan.Service.Hardware;
@@ -59,44 +61,194 @@ public sealed class LibreHardwareMonitorSensorService : IDisposable
         // Prefer "Core Max / Package / CPU Package" over individual cores
         var preferred = withValue.FirstOrDefault(s =>
             s.Name is "Core Max" or "CPU Package" or "Package");
-        var val = (preferred ?? withValue.FirstOrDefault())?.Value;
-        return val;
+        var lhm = (preferred ?? withValue.FirstOrDefault())?.Value;
+        if (lhm is not null) return lhm;
+
+        // VBS / Hyper-V blocks the MSR reads that LHM relies on for Intel CPU
+        // temps, so on those machines every LHM CPU temperature sensor is null.
+        // Fall back to the ACPI thermal zone — the standard kernel counter
+        // `Win32_PerfFormattedData_Counters_ThermalZoneInformation.Temperature`
+        // is reported in tenths of a degree Celsius (e.g. 366 -> 36.6 °C) and
+        // does not need MSR. This is the same source HWMonitor falls back to
+        // for the "\\_TZ.THM0" line in its report.
+        var ac = ReadAcpiThermalZoneCelsius();
+        if (ac is not null)
+        {
+            Console.WriteLine(
+                "LHM CPU temperatures are empty (likely VBS / Hyper-V blocking MSR) — " +
+                "falling back to ACPI thermal-zone counter for CPU temperature.");
+        }
+        return ac;
     }
 
-    /// <summary>First control/fan sensor that looks like CPU fan (%).</summary>
+    /// <summary>
+    /// Best-effort ACPI thermal-zone read for use as a fallback when LHM has
+    /// no usable CPU temperature (e.g. VBS is blocking MSR). Returns the
+    /// hottest active zone in degrees Celsius, or <c>null</c> if the WMI
+    /// query fails (typically because the process is not elevated).
+    /// </summary>
+    private static float? ReadAcpiThermalZoneCelsius()
+    {
+        try
+        {
+            // IMPORTANT: Win32_PerfFormattedData_* lives in root\CIMV2, not
+            // root\WMI. (root\WMI hosts the separate MSAcpi_ThermalZone* class
+            // which requires a different query and different scaling.) Using
+            // the wrong scope silently returns 0 rows.
+            using var searcher = new ManagementObjectSearcher(
+                @"root\CIMV2",
+                "SELECT Name, Temperature FROM " +
+                "Win32_PerfFormattedData_Counters_ThermalZoneInformation");
+            float hottest = float.NaN;
+            foreach (ManagementObject obj in searcher.Get())
+            {
+                var raw = obj["Temperature"];
+                if (raw is null) continue;
+                var t = Convert.ToSingle(raw) / 10f;
+                if (float.IsNaN(hottest) || t > hottest) hottest = t;
+            }
+            if (!float.IsNaN(hottest))
+            {
+                Debug.WriteLine($"LHM fallback -> ACPI thermal zone: {hottest:0.0} °C");
+                return hottest;
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"LHM ACPI fallback failed: {ex.Message}");
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Best-effort fan duty cycle percentage. Order:
+    ///   1. LibreHardwareMonitor (any Control sensor with a "Fan" in the name).
+    ///   2. Lenovo WMI in <c>root\WMI</c> (LenovoFan / IdeaFan / FanDevice)
+    ///      — present when Lenovo Vantage, Energy Management, or the
+    ///      <c>LnvWmiEvent</c> driver is installed. Returns 0..100.
+    ///
+    /// We deliberately do <b>not</b> fall back to the EC readback register:
+    /// on T480 the mirror register at 0x2F echoes <c>0x00</c> / <c>0x80</c>
+    /// / <c>0xFF</c> depending on timing and not the level we wrote, which
+    /// produced bogus values like "1829 %" in the UI.
+    /// </summary>
     public float? ReadFanControlPercent()
     {
-        if (!_initialized) return null;
-        Refresh();
-        var controls = _computer.Hardware
-            .SelectMany(ExpandHardware)
-            .SelectMany(h => h.Sensors)
-            .Where(s => s.SensorType == SensorType.Control)
-            .ToList();
-        System.Diagnostics.Debug.WriteLine($"LHM controls: {controls.Count} sensors: {string.Join(", ", controls.Select(s => $"{s.Name}={s.Value}"))}");
-        var withValue = controls.Where(s => s.Value is not null).ToList();
-        var best = withValue.FirstOrDefault(s =>
-            s.Name.Contains("Fan", StringComparison.OrdinalIgnoreCase))
-            ?? withValue.FirstOrDefault();
-        return best?.Value;
+        if (_initialized)
+        {
+            Refresh();
+            var controls = _computer.Hardware
+                .SelectMany(ExpandHardware)
+                .SelectMany(h => h.Sensors)
+                .Where(s => s.SensorType == SensorType.Control)
+                .ToList();
+            System.Diagnostics.Debug.WriteLine($"LHM controls: {controls.Count} sensors: {string.Join(", ", controls.Select(s => $"{s.Name}={s.Value}"))}");
+            var withValue = controls.Where(s => s.Value is not null).ToList();
+            var best = withValue.FirstOrDefault(s =>
+                s.Name.Contains("Fan", StringComparison.OrdinalIgnoreCase))
+                ?? withValue.FirstOrDefault();
+            if (best?.Value is { } v && v is >= 0f and <= 100f) return v;
+        }
+
+        var lenovo = ReadLenovoFanPercent();
+        if (lenovo is { } lp && lp is >= 0f and <= 100f) return lp;
+
+        // EC readback is intentionally NOT used: see XML doc above.
+        return null;
     }
 
     /// <summary>First fan RPM sensor.</summary>
     public float? ReadFanRpm()
     {
-        if (!_initialized) return null;
-        Refresh();
-        var fans = _computer.Hardware
-            .SelectMany(ExpandHardware)
-            .SelectMany(h => h.Sensors)
-            .Where(s => s.SensorType == SensorType.Fan)
-            .ToList();
-        System.Diagnostics.Debug.WriteLine($"LHM fans: {fans.Count} sensors: {string.Join(", ", fans.Select(s => $"{s.Name}={s.Value}"))}");
-        var withValue = fans.Where(s => s.Value is not null).ToList();
-        var best = withValue.FirstOrDefault(s =>
-            s.Name.Contains("Fan", StringComparison.OrdinalIgnoreCase))
-            ?? withValue.FirstOrDefault();
-        return best?.Value;
+        if (_initialized)
+        {
+            Refresh();
+            var fans = _computer.Hardware
+                .SelectMany(ExpandHardware)
+                .SelectMany(h => h.Sensors)
+                .Where(s => s.SensorType == SensorType.Fan)
+                .ToList();
+            System.Diagnostics.Debug.WriteLine($"LHM fans: {fans.Count} sensors: {string.Join(", ", fans.Select(s => $"{s.Name}={s.Value}"))}");
+            var withValue = fans.Where(s => s.Value is not null).ToList();
+            var best = withValue.FirstOrDefault(s =>
+                s.Name.Contains("Fan", StringComparison.OrdinalIgnoreCase))
+                ?? withValue.FirstOrDefault();
+            if (best?.Value is { } v && v >= 0f) return v;
+        }
+
+        return ReadLenovoFanRpm();
+    }
+
+    /// <summary>
+    /// Probe Lenovo's WMI fan class. The namespace and class name vary by
+    /// driver version; we try the documented ones in order and accept the
+    /// first one that returns numeric data. Returns <c>null</c> if the
+    /// driver isn't installed (very common — Lenovo Vantage is optional).
+    /// </summary>
+    private static float? ReadLenovoFanPercent()
+    {
+        foreach (var (ns, cls) in new[]
+                 {
+                     (@"root\WMI", "Lenovo_Fan"),
+                     (@"root\WMI", "IdeaFan"),
+                     (@"root\WMI", "LEN_FANSTATUS"),
+                 })
+        {
+            var v = QueryNumericField(ns, cls, new[] { "FanSpeedPercent", "Percentage", "Speed" });
+            if (v is { } p && p is >= 0f and <= 100f) return p;
+        }
+        return null;
+    }
+
+    private static float? ReadLenovoFanRpm()
+    {
+        foreach (var (ns, cls) in new[]
+                 {
+                     (@"root\WMI", "Lenovo_Fan"),
+                     (@"root\WMI", "IdeaFan"),
+                     (@"root\WMI", "LEN_FANSTATUS"),
+                 })
+        {
+            var v = QueryNumericField(ns, cls, new[] { "FanSpeedRpm", "RPM", "Speed", "CurrentSpeed" });
+            if (v is { } r && r >= 0f) return r;
+        }
+        return null;
+    }
+
+    private static float? QueryNumericField(string scope, string className, string[] fieldNames)
+    {
+        try
+        {
+            // SELECT * is fine here: Lenovo WMI classes are tiny (one row),
+            // and we don't know which of the candidate field names exists.
+            using var searcher = new ManagementObjectSearcher(scope, $"SELECT * FROM {className}");
+            foreach (ManagementObject obj in searcher.Get())
+            {
+                foreach (var f in fieldNames)
+                {
+                    var raw = obj[f];
+                    if (raw is null) continue;
+                    try
+                    {
+                        return Convert.ToSingle(raw);
+                    }
+                    catch
+                    {
+                        // Wrong type for this field; try the next.
+                    }
+                }
+            }
+        }
+        catch (ManagementException)
+        {
+            // Class not registered in this scope — the driver isn't installed.
+            // Expected and harmless; keep trying the next class.
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"WMI probe {scope}\\{className} failed: {ex.Message}");
+        }
+        return null;
     }
 
     private void Refresh()

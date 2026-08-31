@@ -16,10 +16,6 @@ class Program
 
         try
         {
-            var sensorService = new LibreHardwareMonitorSensorService();
-            Console.WriteLine(
-                $"Hardware sensors (LHM): {(sensorService.IsAvailable ? "AVAILABLE" : "unavailable — temperature/RPM/fan % will be 0")}");
-
             var fanController = new EcFanController();
             Console.WriteLine(
                 $"EC fan control: {(fanController.IsAvailable ? "AVAILABLE" : "unavailable")}");
@@ -30,6 +26,10 @@ class Program
                 Console.WriteLine(
                     "     is run as Administrator (and that inpoutx64.sys is installed).");
             }
+
+            var sensorService = new LibreHardwareMonitorSensorService();
+            Console.WriteLine(
+                $"Hardware sensors (LHM): {(sensorService.IsAvailable ? "AVAILABLE" : "unavailable — temperature/RPM/fan % will be 0")}");
 
             using var fanProvider = new T480FanProvider(sensorService, fanController);
             using var pipeServer = new FanServicePipeServer(fanProvider);
