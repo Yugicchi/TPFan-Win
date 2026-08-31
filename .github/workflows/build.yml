@@ -89,11 +89,21 @@ jobs:
     - name: Publish Service (Self-contained)
       run: dotnet publish TPFan.Service/TPFan.Service.csproj --configuration ${{ env.CONFIGURATION }} --runtime win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true --output ./publish/service
 
+    - name: Publish GUI (WPF, Self-contained)
+      run: dotnet publish TPFan.GUI/TPFan.GUI.csproj --configuration ${{ env.CONFIGURATION }} --runtime win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true --output ./publish/gui
+
     - name: Upload Service artifact
       uses: actions/upload-artifact@v7
       with:
         name: TPFan-Win-Service
         path: ./publish/service
+        retention-days: 30
+
+    - name: Upload GUI artifact
+      uses: actions/upload-artifact@v7
+      with:
+        name: TPFan-Win-GUI
+        path: ./publish/gui
         retention-days: 30
 
     - name: Create package info
