@@ -19,6 +19,11 @@
     <ProjectReference Include="..\TPFan.Shared\TPFan.Shared.csproj" />
   </ItemGroup>
 
+  <!-- Include InpOut32 native driver (same version as service) -->
+  <ItemGroup>
+    <None Include="..\TPFan.Service\native\inpoutx64.dll" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.3.2" />
     <PackageReference Include="System.Text.Json" Version="8.0.5" />
