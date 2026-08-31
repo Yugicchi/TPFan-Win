@@ -13,6 +13,7 @@ public sealed class LibreHardwareMonitorSensorService : IDisposable
 {
     private readonly Computer _computer;
     private bool _initialized;
+    private bool _dumpedOnce;
 
     public LibreHardwareMonitorSensorService()
     {
@@ -50,13 +51,15 @@ public sealed class LibreHardwareMonitorSensorService : IDisposable
             .SelectMany(ExpandHardware)
             .Where(h => h.HardwareType is HardwareType.Cpu)
             .SelectMany(h => h.Sensors)
-            .Where(s => s.SensorType == SensorType.Temperature && s.Value is not null)
+            .Where(s => s.SensorType == SensorType.Temperature)
             .ToList();
+        System.Diagnostics.Debug.WriteLine($"LHM temps (cpu): {temps.Count} sensors: {string.Join(", ", temps.Select(s => $"{s.Name}={s.Value}"))}");
 
+        var withValue = temps.Where(s => s.Value is not null).ToList();
         // Prefer "Core Max / Package / CPU Package" over individual cores
-        var preferred = temps.FirstOrDefault(s =>
+        var preferred = withValue.FirstOrDefault(s =>
             s.Name is "Core Max" or "CPU Package" or "Package");
-        var val = (preferred ?? temps.FirstOrDefault())?.Value;
+        var val = (preferred ?? withValue.FirstOrDefault())?.Value;
         return val;
     }
 
@@ -68,12 +71,13 @@ public sealed class LibreHardwareMonitorSensorService : IDisposable
         var controls = _computer.Hardware
             .SelectMany(ExpandHardware)
             .SelectMany(h => h.Sensors)
-            .Where(s => s.SensorType == SensorType.Control && s.Value is not null)
+            .Where(s => s.SensorType == SensorType.Control)
             .ToList();
-        // Prefer names like Fan Control, Fan #1
-        var best = controls.FirstOrDefault(s =>
+        System.Diagnostics.Debug.WriteLine($"LHM controls: {controls.Count} sensors: {string.Join(", ", controls.Select(s => $"{s.Name}={s.Value}"))}");
+        var withValue = controls.Where(s => s.Value is not null).ToList();
+        var best = withValue.FirstOrDefault(s =>
             s.Name.Contains("Fan", StringComparison.OrdinalIgnoreCase))
-            ?? controls.FirstOrDefault();
+            ?? withValue.FirstOrDefault();
         return best?.Value;
     }
 
@@ -85,11 +89,13 @@ public sealed class LibreHardwareMonitorSensorService : IDisposable
         var fans = _computer.Hardware
             .SelectMany(ExpandHardware)
             .SelectMany(h => h.Sensors)
-            .Where(s => s.SensorType == SensorType.Fan && s.Value is not null)
+            .Where(s => s.SensorType == SensorType.Fan)
             .ToList();
-        var best = fans.FirstOrDefault(s =>
+        System.Diagnostics.Debug.WriteLine($"LHM fans: {fans.Count} sensors: {string.Join(", ", fans.Select(s => $"{s.Name}={s.Value}"))}");
+        var withValue = fans.Where(s => s.Value is not null).ToList();
+        var best = withValue.FirstOrDefault(s =>
             s.Name.Contains("Fan", StringComparison.OrdinalIgnoreCase))
-            ?? fans.FirstOrDefault();
+            ?? withValue.FirstOrDefault();
         return best?.Value;
     }
 
@@ -100,6 +106,32 @@ public sealed class LibreHardwareMonitorSensorService : IDisposable
         foreach (var hw in _computer.Hardware)
             foreach (var sub in hw.SubHardware)
                 sub.Update();
+
+        // First-time dump so we can see what the library actually
+        // exposes on this machine. Helps narrow down why a sensor
+        // appears empty (driver issue vs library issue).
+        if (!_dumpedOnce)
+        {
+            _dumpedOnce = true;
+            foreach (var hw in _computer.Hardware)
+            {
+                Dump(hw, 0);
+                foreach (var sub in hw.SubHardware)
+                    Dump(sub, 1);
+            }
+        }
+    }
+
+    private static void Dump(LibreHardwareMonitor.Hardware.IHardware hw, int indent)
+    {
+        var prefix = new string(' ', indent * 2);
+        System.Diagnostics.Debug.WriteLine(
+            $"{prefix}HW: {hw.HardwareType} {hw.Name} (identifier={hw.Identifier})");
+        foreach (var s in hw.Sensors)
+        {
+            System.Diagnostics.Debug.WriteLine(
+                $"{prefix}  SENSOR: {s.SensorType} {s.Name} = {s.Value}");
+        }
     }
 
     private static System.Collections.Generic.IEnumerable<IHardware> ExpandHardware(IHardware hw)
