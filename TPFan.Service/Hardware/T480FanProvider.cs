@@ -65,9 +65,20 @@ public class T480FanProvider : IDisposable
     /// <summary>Get current fan RPM.</summary>
     public async Task<int> GetFanRpmAsync()
     {
+        // 1. Try LHM or Lenovo WMI first
         var r = await Task.Run(() => _sensors.ReadFanRpm()).ConfigureAwait(false);
-        if (r is { } v)
+        if (r is { } v && v > 0)
             return (int)Math.Round(v);
+
+        // 2. If LHM/WMI has no reading, read real hardware tachometer from ThinkPad EC registers 0x84/0x85!
+        if (_fanController is not null)
+        {
+            var ecRpm = await _fanController.GetFanRpmAsync();
+            if (ecRpm is { } realRpm)
+                return realRpm;
+        }
+
+        // 3. Last fallback: estimate from active override or return 0
         return _isOverrideActive ? EstimateRpmFromPercent(_lastFanSpeed) : 0;
     }
 
@@ -120,21 +131,44 @@ public class T480FanProvider : IDisposable
 
     public async Task<bool> SetFanSpeedOverrideAsync(int speedPercent)
     {
-        if (_fanController is null) return false;
+        if (_fanController is null)
+        {
+            Console.WriteLine("[Provider] SetFanSpeedOverrideAsync: _fanController is NULL");
+            return false;
+        }
+        Console.WriteLine($"[Provider] SetFanSpeedOverrideAsync({speedPercent}%) -> delegating to fan controller...");
         var ok = await _fanController.SetFanSpeedAsync(speedPercent);
         if (ok)
         {
             _isOverrideActive = true;
             _lastFanSpeed = Math.Clamp(speedPercent, 0, 100);
+            Console.WriteLine($"[Provider] Override engaged: speedPercent={_lastFanSpeed}%, IsOverrideActive=True");
+        }
+        else
+        {
+            Console.WriteLine($"[Provider] Override FAILED for speedPercent={speedPercent}%");
         }
         return ok;
     }
 
     public async Task<bool> ResetFanOverrideAsync()
     {
-        if (_fanController is null) return false;
+        if (_fanController is null)
+        {
+            Console.WriteLine("[Provider] ResetFanOverrideAsync: _fanController is NULL");
+            return false;
+        }
+        Console.WriteLine("[Provider] ResetFanOverrideAsync: resetting override to auto...");
         var ok = await _fanController.ResetToAutoAsync();
-        if (ok) _isOverrideActive = false;
+        if (ok)
+        {
+            _isOverrideActive = false;
+            Console.WriteLine("[Provider] Override reset to auto: IsOverrideActive=False");
+        }
+        else
+        {
+            Console.WriteLine("[Provider] Reset to auto FAILED");
+        }
         return ok;
     }
 

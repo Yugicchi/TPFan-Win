@@ -15,6 +15,7 @@ public class MainViewModel : INotifyPropertyChanged
 {
     private readonly FanServiceClient _serviceClient;
     private readonly UserSettingsService _settingsService;
+    private System.Threading.Timer? _pollTimer;
 
     private FanCurve? _currentCurve;
     private FanStatus? _currentStatus;
@@ -123,6 +124,13 @@ public class MainViewModel : INotifyPropertyChanged
             // Load fan curve
             CurrentCurve = await _serviceClient.GetFanCurveAsync();
             CurrentStatus = await _serviceClient.GetFanStatusAsync();
+
+            // Start polling: refresh status every 2 seconds so the UI always shows real values
+            _pollTimer = new System.Threading.Timer(
+                static state => _ = ((MainViewModel)state!).PollStatusAsync(),
+                this,
+                dueTime: TimeSpan.FromSeconds(2),
+                period: TimeSpan.FromSeconds(2));
         }
         catch (Exception ex)
         {
@@ -132,6 +140,18 @@ public class MainViewModel : INotifyPropertyChanged
         finally
         {
             IsLoading = false;
+        }
+    }
+
+    private async Task PollStatusAsync()
+    {
+        try
+        {
+            CurrentStatus = await _serviceClient.GetFanStatusAsync();
+        }
+        catch
+        {
+            // Best-effort: don't crash the timer thread
         }
     }
 

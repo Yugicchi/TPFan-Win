@@ -86,15 +86,13 @@ public class EcFanController : IFanController
 
     public async Task<bool> SetFanSpeedAsync(int percent)
     {
-        if (!IsAvailable) return false;
+        if (!IsAvailable) { Console.WriteLine("[EC] SetFanSpeedAsync: NOT AVAILABLE (dll or not elevated)"); return false; }
         if (percent < 0 || percent > 100)
-        {
-            Debug.WriteLine($"EcFanController: ignoring out-of-range percent={percent}");
-            return false;
-        }
+        { Console.WriteLine($"[EC] SetFanSpeedAsync: ignoring out-of-range percent={percent}"); return false; }
 
         var level = MapPercentToLevel(percent);
-        if (level == _lastLevel) return true; // Nothing to do; avoid unnecessary EC traffic.
+        Console.WriteLine($"[EC] SetFanSpeedAsync percent={percent} -> level={level} (IsAvailable={IsAvailable})");
+        if (level == _lastLevel) { Console.WriteLine($"[EC] SetFanSpeedAsync: level={level} == _lastLevel, skip"); return true; }
 
         try
         {
@@ -111,31 +109,33 @@ public class EcFanController : IFanController
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"EcFanController.SetFanSpeedAsync failed: {ex.Message}");
+            Console.WriteLine($"[EC] SetFanSpeedAsync FAILED: {ex.Message}");
             return false;
         }
     }
 
     public async Task<bool> ResetToAutoAsync()
     {
-        if (!IsAvailable) return false;
+        if (!IsAvailable) { Console.WriteLine("[EC] ResetToAutoAsync: NOT AVAILABLE"); return false; }
+        Console.WriteLine("[EC] ResetToAutoAsync: restoring auto control...");
 
         try
         {
             return await Task.Run(() =>
             {
-                // Per NBFC T480 config: writing 0x00 to the reset register is the
-                // canonical "return to firmware auto control" gesture. Belt and
-                // braces: also clear the manual mode byte.
-                EcWrite(_options.ResetRegister, 0x00);
+                // Per thinkpad_acpi / NBFC: write 0x80 to 0x2F to request
+                // BIOS / auto fan control. The EC immediately re-enables its
+                // internal thermal curve. Then clear the engagement byte (0x31).
+                EcWrite(_options.WriteRegister, _options.AutoLevelValue);
                 EcWrite(_options.ModeRegister, _options.AutoModeValue);
                 _lastLevel = -1;
+                Console.WriteLine("[EC] ResetToAutoAsync: OK (auto level 0x80 written, engagement cleared)");
                 return true;
             }).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"EcFanController.ResetToAutoAsync failed: {ex.Message}");
+            Console.WriteLine($"[EC] ResetToAutoAsync FAILED: {ex.Message}");
             return false;
         }
     }
@@ -149,13 +149,47 @@ public class EcFanController : IFanController
             return await Task.Run(() =>
             {
                 var raw = EcRead(_options.ReadRegister);
-                return MapLevelToPercent(raw);
+                var pct = MapLevelToPercent(raw);
+                Debug.WriteLine($"[EC] GetFanSpeedPercentAsync raw=0x{raw:X2} -> {pct}%");
+                return pct;
             }).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"EcFanController.GetFanSpeedPercentAsync failed: {ex.Message}");
+            Console.WriteLine($"[EC] GetFanSpeedPercentAsync FAILED: {ex.Message}");
             return -1;
+        }
+    }
+
+    /// <summary>
+    /// Reads the actual fan tachometer RPM from ThinkPad EC registers:
+    /// Low Byte at 0x84 (LSB) and High Byte at 0x85 (MSB) (Little-Endian).
+    /// Real hardware RPM = (EC[0x85] &lt;&lt; 8) | EC[0x84].
+    /// </summary>
+    public async Task<int?> GetFanRpmAsync()
+    {
+        if (!IsAvailable) return null;
+
+        try
+        {
+            return await Task.Run(() =>
+            {
+                var lsb = EcRead(_options.TachLowRegister);
+                var msb = EcRead(_options.TachHighRegister);
+                var rpm = (msb << 8) | lsb;
+                Console.WriteLine($"[EC.tach] 0x{_options.TachHighRegister:X2}(msb)=0x{msb:X2} 0x{_options.TachLowRegister:X2}(lsb)=0x{lsb:X2} -> RPM={rpm}");
+                // Basic sanity check: if the reading is bogus (e.g. 0xFFFF or > 10000), treat as 0/unspun
+                if (rpm is > 10000 or 0xFFFF)
+                {
+                    return (int?)0;
+                }
+                return (int?)rpm;
+            }).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[EC] GetFanRpmAsync failed: {ex.Message}");
+            return null;
         }
     }
 
@@ -199,7 +233,9 @@ public class EcFanController : IFanController
         WaitForStatus(StatusIbf, expected: 0);
         Out32(DataPort, offset);
         WaitForStatus(StatusObf, expected: 1);
-        return (byte)Inp32(DataPort);
+        var val = (byte)Inp32(DataPort);
+        Debug.WriteLine($"[EC.io] Read(0x{offset:X2}) -> 0x{val:X2}");
+        return val;
     }
 
     private void EcWrite(byte offset, byte value)
@@ -210,6 +246,7 @@ public class EcFanController : IFanController
         Out32(DataPort, offset);
         WaitForStatus(StatusIbf, expected: 0);
         Out32(DataPort, value);
+        Debug.WriteLine($"[EC.io] Write(0x{offset:X2}, 0x{value:X2}) OK");
     }
 
     private void WaitForStatus(byte mask, byte expected)

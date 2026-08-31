@@ -38,4 +38,10 @@ public interface IFanController
     /// the value that overrides any WMI % when the override is active.
     /// </summary>
     Task<int> GetFanSpeedPercentAsync();
+
+    /// <summary>
+    /// Read the real fan tachometer RPM directly from the EC hardware registers
+    /// (0x84 MSB, 0x85 LSB on ThinkPad). Returns null or negative if unavailable.
+    /// </summary>
+    Task<int?> GetFanRpmAsync();
 }
