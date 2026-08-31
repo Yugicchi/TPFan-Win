@@ -33,16 +33,11 @@ class Program
 
             using var fanProvider = new T480FanProvider(sensorService, fanController);
             using var pipeServer = new FanServicePipeServer(fanProvider);
+            using var tray = new TPFan.Service.UI.SystemTrayManager(fanProvider);
 
-            // Ctrl+C handler returns the fan to auto control so an abrupt
-            // stop does not leave the fan pinned at the user's last override.
-            Console.CancelKeyPress += (_, e) =>
-            {
-                e.Cancel = false;
-                fanProvider.ResetFanOverrideAsync().GetAwaiter().GetResult();
-                sensorService.Dispose();
-                Console.WriteLine("\nFan override released. Exiting.");
-            };
+            pipeServer.Start();
+            tray.Start();
+            Console.WriteLine("System tray icon started (right-click for menu).");
 
             // Read initial status
             var status = await fanProvider.GetFanStatusAsync();
@@ -57,6 +52,37 @@ class Program
             foreach (var point in curve.Points)
             {
                 Console.WriteLine($"  {point}");
+            }
+
+            // Check for ad-hoc debug override test (e.g. --override-test 80)
+            for (var i = 0; i < args.Length; i++)
+            {
+                if (args[i] == "--override-test" && i + 1 < args.Length && int.TryParse(args[i + 1], out var targetPct))
+                {
+                    Console.WriteLine($"\n=== Ad-hoc EC Override Test: target={targetPct}% ===");
+                    var ok = await fanProvider.SetFanSpeedOverrideAsync(targetPct);
+                    Console.WriteLine($"Override result: {ok}");
+                    Console.WriteLine("Holding override for 15 seconds to observe fan spin-up...");
+                    for (var s = 1; s <= 15; s++)
+                    {
+                        await Task.Delay(1000);
+                        var liveStatus = await fanProvider.GetFanStatusAsync();
+                        Console.WriteLine($"  [{s}s] Temp: {liveStatus.TemperatureCelsius}°C | RPM: {liveStatus.Rpm} | Speed: {liveStatus.SpeedPercent}% | OverrideActive: {liveStatus.IsOverrideActive}");
+                    }
+
+                    Console.WriteLine("\nResetting to auto (firmware thermal curve takes back control)...");
+                    var resetOk = await fanProvider.ResetFanOverrideAsync();
+                    Console.WriteLine($"Reset result: {resetOk}");
+                    Console.WriteLine("Observing spin-down over 10 seconds...");
+                    for (var s = 1; s <= 10; s++)
+                    {
+                        await Task.Delay(1000);
+                        var liveStatus = await fanProvider.GetFanStatusAsync();
+                        Console.WriteLine($"  [Post-reset +{s}s] Temp: {liveStatus.TemperatureCelsius}°C | RPM: {liveStatus.Rpm} | OverrideActive: {liveStatus.IsOverrideActive}");
+                    }
+                    Console.WriteLine("=== Ad-hoc EC Override Test completed. Exiting. ===\n");
+                    return;
+                }
             }
 
             // Keep service running
