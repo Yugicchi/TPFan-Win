@@ -29,8 +29,10 @@ public sealed class SystemTrayManager : IDisposable
     private System.Threading.Timer? _refreshTimer;
     private bool _disposed;
     private static T480FanProvider? _providerRef;
-    // NotifyIcon has a hidden window handle we can use for Invoke/BeginInvoke
-    private Control? _trayControl;
+    // Hidden Form provides a real HWND for Invoke/BeginInvoke from worker threads.
+    // A bare Control without a parent never gets a handle, so its BeginInvoke
+    // would silently drop posted delegates.
+    private Form? _trayForm;
 
     private static SystemTrayManager? _instance; // singleton reference for static exit handler
 
@@ -122,7 +124,7 @@ public sealed class SystemTrayManager : IDisposable
                 try
                 {
                     await _fanProvider.ResetFanOverrideAsync();
-                    _trayControl?.BeginInvoke((MethodInvoker)(() => RefreshStatus()));
+                    _trayForm?.BeginInvoke((MethodInvoker)(() => RefreshStatus()));
                 }
                 catch (Exception ex)
                 {
@@ -167,10 +169,18 @@ public sealed class SystemTrayManager : IDisposable
             Visible = true
         };
 
-        // Hidden control used exclusively for Invoke/BeginInvoke to marshal callbacks
-        // onto the tray's STA message loop (the one that owns the NotifyIcon HWND).
-        _trayControl = new Control { Width = 0, Height = 0, Visible = false };
-        _trayControl.CreateControl();
+        // Hidden form provides a real HWND for Invoke/BeginInvoke so worker threads
+        // can marshal updates onto the STA message loop that owns the tray.
+        // Accessing .Handle forces handle creation; we hide it from taskbar/alt-tab.
+        _trayForm = new Form
+        {
+            ShowInTaskbar = false,
+            WindowState = FormWindowState.Minimized,
+            Size = new Size(1, 1),
+            Opacity = 0,
+            Text = string.Empty
+        };
+        _ = _trayForm.Handle; // force handle creation; discarded intentionally
     }
 
     private void AddOverrideOption(ToolStripMenuItem parent, string label, int percent)
@@ -185,7 +195,7 @@ public sealed class SystemTrayManager : IDisposable
                 try
                 {
                     await _fanProvider.SetFanSpeedOverrideAsync(percent);
-                    _trayControl?.BeginInvoke((MethodInvoker)(() => RefreshStatus()));
+                    _trayForm?.BeginInvoke((MethodInvoker)(() => RefreshStatus()));
                 }
                 catch (Exception ex)
                 {
@@ -206,8 +216,12 @@ public sealed class SystemTrayManager : IDisposable
             var temp = (int)Math.Round((double)status.TemperatureCelsius);
             var modeStr = status.IsOverrideActive ? $"Manual ({status.SpeedPercent}%)" : "Auto";
 
-            // Marshal UI update onto STA thread via hidden control's window handle
-            _trayControl?.BeginInvoke((MethodInvoker)(() => UpdateUiState(status, temp, modeStr)));
+            // Marshal UI update onto STA thread via hidden form's window handle
+            var f = _trayForm;
+            if (f != null && f.IsHandleCreated)
+            {
+                f.BeginInvoke((MethodInvoker)(() => UpdateUiState(status, temp, modeStr)));
+            }
         }
         catch (Exception ex)
         {
@@ -319,7 +333,7 @@ public sealed class SystemTrayManager : IDisposable
         }
 
         _contextMenu?.Dispose();
-        _trayControl?.Dispose();
+        _trayForm?.Dispose();
 
         if (_uiThread != null && _uiThread.IsAlive)
         {
