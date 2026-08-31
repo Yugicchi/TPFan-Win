@@ -94,8 +94,12 @@ public class T480FanProvider : IDisposable
                 {
                     if (obj["HighPrecisionTemperature"] is not null)
                     {
-                        var tenthsKelvin = Convert.ToInt32(obj["HighPrecisionTemperature"]);
-                        var celsius = (tenthsKelvin - 2731) / 10;
+                        // HPT is in tenths of Kelvin: 3252 -> 325.2 K -> 52.0 °C
+                        // Use floating point so we don't truncate (3252-2731)/10 = 52
+                        // rather than integer division clipping to 52 anyway, but
+                        // the intent is (tenthsKelvin/10 - 273.1).
+                        var tenthsKelvin = Convert.ToDouble(obj["HighPrecisionTemperature"]);
+                        var celsius = (int)Math.Round(tenthsKelvin / 10.0 - 273.1);
                         if (celsius is > 0 and < 120)
                         {
                             _lastTemperature = celsius;
