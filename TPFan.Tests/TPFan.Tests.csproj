@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <UseWindowsDesktopSdk>true</UseWindowsDesktopSdk>
+
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+
+    <!-- This test project deliberately targets net8.0-windows10.0.19041.0
+         (not net8.0) so it can reference the same TPFan.Service assembly
+         the service ships. The unit tests in this project are pure logic
+         and never instantiate the SensorService, but referencing the real
+         assembly ensures regressions in the production code surface here
+         (e.g. public API changes), not just at runtime. -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.0" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
+    <PackageReference Include="xunit" Version="2.5.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.5.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\TPFan.Service\TPFan.Service.csproj" />
+    <ProjectReference Include="..\TPFan.Shared\TPFan.Shared.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+</Project>

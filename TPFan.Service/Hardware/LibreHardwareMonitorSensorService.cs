@@ -104,7 +104,7 @@ public sealed class LibreHardwareMonitorSensorService : IDisposable
             {
                 var raw = obj["Temperature"];
                 if (raw is null) continue;
-                var t = Convert.ToSingle(raw) / 10f;
+                var t = ThermalZoneRawToCelsius(Convert.ToUInt32(raw));
                 if (float.IsNaN(hottest) || t > hottest) hottest = t;
             }
             if (!float.IsNaN(hottest))
@@ -119,6 +119,30 @@ public sealed class LibreHardwareMonitorSensorService : IDisposable
         }
         return null;
     }
+
+    /// <summary>
+    /// Public guard used by the unit tests: a fan percent value is only
+    /// displayable when it lies in the inclusive <c>0..100</c> range. The
+    /// T480 EC mirror register bug that produced <c>1829 %</c> was caused
+    /// by skipping this check; production code must consume this
+    /// predicate (or a duplicate inline check) before publishing a value
+    /// to the UI.
+    /// </summary>
+    public static bool IsFanPercentValid(float percent) =>
+        !float.IsNaN(percent) && percent >= 0f && percent <= 100f;
+
+    /// <summary>Mirror of <see cref="IsFanPercentValid"/> for fan RPM.</summary>
+    public static bool IsFanRpmValid(float rpm) =>
+        !float.IsNaN(rpm) && !float.IsInfinity(rpm) && rpm >= 0f;
+
+    /// <summary>
+    /// Convert the raw <c>Temperature</c> counter value (tenths of a
+    /// degree Celsius) to Celsius. Hoisted to a public static method so
+    /// the unit tests can lock the scalar — historically this was a
+    /// silent bug (treating the raw value as Kelvin produced &gt;90 °C
+    /// on a 51 °C CPU).
+    /// </summary>
+    public static float ThermalZoneRawToCelsius(uint rawTenths) => rawTenths / 10f;
 
     /// <summary>
     /// Best-effort fan duty cycle percentage. Order:
