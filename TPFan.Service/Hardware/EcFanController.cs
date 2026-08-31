@@ -59,19 +59,31 @@ public class EcFanController : IFanController
     }
 
     /// <summary>
-    /// Probe a few likely locations for the InpOut32 shim. We cannot use
-    /// <c>NativeLibrary.TryLoad</c> here without making a successful load
-    /// a hard requirement, so we just confirm the file is on disk.
+    /// Probe likely locations for the InpOut32 shim. We cannot use
+    /// NativeLibrary.TryLoad without making a successful load a hard
+    /// requirement, so we just confirm the file is on disk.
+    ///
+    /// In single-file publish mode:
+    ///   - AppContext.BaseDirectory points to the extraction temp directory
+    ///     (where the bundled native libs are unpacked at startup).
+    ///   - Environment.ProcessPath points to the actual .exe path.
+    ///   - Both dirs are checked, plus a 'native\' subfolder.
     /// </summary>
     private static bool DetectInpOutDll()
     {
         try
         {
+            // For single-file apps Environment.ProcessPath gives the real exe path.
+            // AppContext.BaseDirectory is the extraction folder (same dir as .exe).
             var baseDir = AppContext.BaseDirectory;
+            var exeDir = Path.GetDirectoryName(Environment.ProcessPath ?? string.Empty) ?? string.Empty;
+
             var candidates = new[]
             {
                 Path.Combine(baseDir, $"{InpOutDll}.dll"),
                 Path.Combine(baseDir, "native", $"{InpOutDll}.dll"),
+                Path.Combine(exeDir, $"{InpOutDll}.dll"),
+                Path.Combine(exeDir, "native", $"{InpOutDll}.dll"),
                 Path.Combine(Environment.SystemDirectory, $"{InpOutDll}.dll"),
             };
             return candidates.Any(File.Exists);

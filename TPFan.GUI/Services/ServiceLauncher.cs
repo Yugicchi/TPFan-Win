@@ -76,13 +76,14 @@ public static class ServiceLauncher
             var startInfo = new ProcessStartInfo
             {
                 FileName = servicePath,
-                UseShellExecute = false,
-                CreateNoWindow = true,        // service owns its own console + tray
+                UseShellExecute = true,       // required for Verb="runas"
+                Verb = "runas",               // request UAC elevation
+                CreateNoWindow = false,       // required for runas
+                WindowStyle = ProcessWindowStyle.Hidden,
                 WorkingDirectory = Path.GetDirectoryName(servicePath) ?? Environment.CurrentDirectory,
             };
 
-            // Inherit the GUI's elevated token (or lack thereof). EC write
-            // requires elevation; without it the service degrades to WMI-only.
+            // Elevate the service so EC writes work via InpOut32.
             _launchedProcess = Process.Start(startInfo);
             if (_launchedProcess == null)
             {
