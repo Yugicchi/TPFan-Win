@@ -1,7 +1,9 @@
 using System;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
 using System.Drawing.Text;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -26,15 +28,20 @@ public sealed class SystemTrayManager : IDisposable
     private Thread? _uiThread;
     private System.Threading.Timer? _refreshTimer;
     private bool _disposed;
+    private static T480FanProvider? _providerRef;
+
+    private static SystemTrayManager? _instance; // singleton reference for static exit handler
 
     public SystemTrayManager(T480FanProvider fanProvider)
     {
         _fanProvider = fanProvider;
+        _instance = this;
     }
 
     public void Start()
     {
         var readyEvent = new ManualResetEventSlim(false);
+        _providerRef = _fanProvider;
 
         _uiThread = new Thread(() =>
         {
@@ -67,6 +74,37 @@ public sealed class SystemTrayManager : IDisposable
         Console.WriteLine("[Tray] System tray icon initialized.");
     }
 
+    private static void ResetFanOnExit()
+    {
+        try
+        {
+            var provider = _providerRef;
+            if (provider != null)
+            {
+                Console.WriteLine("[Tray] Resetting fan to auto on exit...");
+                // Run synchronously on the thread that called us so we block until done.
+                provider.ResetFanOverrideAsync().GetAwaiter().GetResult();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Tray] Reset-to-auto on exit failed: {ex.Message}");
+        }
+    }
+
+    static SystemTrayManager()
+    {
+        // Fires for normal process exit (Environment.Exit, return from Main, etc.)
+        AppDomain.CurrentDomain.ProcessExit += (_, _) => ResetFanOnExit();
+
+        // Fires for Ctrl+C / Ctrl+Break
+        Console.CancelKeyPress += (_, e) =>
+        {
+            e.Cancel = true; // prevent immediate termination; let cleanup run
+            ResetFanOnExit();
+        };
+    }
+
     private void InitializeTray()
     {
         _contextMenu = new ContextMenuStrip();
@@ -75,10 +113,20 @@ public sealed class SystemTrayManager : IDisposable
         _contextMenu.Items.Add(_statusMenuItem);
         _contextMenu.Items.Add(new ToolStripSeparator());
 
-        _autoMenuItem = new ToolStripMenuItem("Auto Mode (Firmware Curve)", null, async (s, e) =>
+        _autoMenuItem = new ToolStripMenuItem("Auto Mode (Firmware Curve)", null, (s, e) =>
         {
-            await _fanProvider.ResetFanOverrideAsync();
-            RefreshStatus();
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await _fanProvider.ResetFanOverrideAsync();
+                    _notifyIcon?.ContextMenuStrip?.BeginInvoke((MethodInvoker)(() => RefreshStatus()));
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[Tray] Auto-mode error: {ex.Message}");
+                }
+            });
         })
         { Checked = true };
         _contextMenu.Items.Add(_autoMenuItem);
@@ -94,11 +142,18 @@ public sealed class SystemTrayManager : IDisposable
         _contextMenu.Items.Add(_overrideMenu);
         _contextMenu.Items.Add(new ToolStripSeparator());
 
-        var exitItem = new ToolStripMenuItem("Exit Service", null, async (s, e) =>
+        var exitItem = new ToolStripMenuItem("Exit Service", null, (s, e) =>
         {
-            await _fanProvider.ResetFanOverrideAsync();
-            Application.Exit();
-            Environment.Exit(0);
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await _fanProvider.ResetFanOverrideAsync();
+                }
+                catch { /* best effort */ }
+                Application.ExitThread();
+                Environment.Exit(0);
+            });
         });
         _contextMenu.Items.Add(exitItem);
 
@@ -113,10 +168,23 @@ public sealed class SystemTrayManager : IDisposable
 
     private void AddOverrideOption(ToolStripMenuItem parent, string label, int percent)
     {
-        var item = new ToolStripMenuItem(label, null, async (s, e) =>
+        var item = new ToolStripMenuItem(label, null, (s, e) =>
         {
-            await _fanProvider.SetFanSpeedOverrideAsync(percent);
-            RefreshStatus();
+            // Do NOT use async void — executes on STA thread.
+            // Fire-and-forget via Task.Run with capture of local state.
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await _fanProvider.SetFanSpeedOverrideAsync(percent);
+                    // Refresh must marshal back to STA thread
+                    _notifyIcon?.ContextMenuStrip?.BeginInvoke((MethodInvoker)(() => RefreshStatus()));
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[Tray] Override error: {ex.Message}");
+                }
+            });
         });
         parent.DropDownItems.Add(item);
     }
@@ -190,7 +258,7 @@ public sealed class SystemTrayManager : IDisposable
     private static Icon CreateTempIcon(int temp)
     {
         const int size = 32;
-        using var bitmap = new Bitmap(size, size);
+        using var bitmap = new Bitmap(size, size, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
         using var g = Graphics.FromImage(bitmap);
 
         g.SmoothingMode = SmoothingMode.AntiAlias;
@@ -223,9 +291,19 @@ public sealed class SystemTrayManager : IDisposable
 
         g.DrawString(text, font, textBrush, new RectangleF(0, 0, size, size), sf);
 
+        // Icon.FromHandle returns a temporary unmanaged icon — the HICON is
+        // invalidated once the source HBITMAP is destroyed (end of using block).
+        // We must duplicate it so the managed Icon owns a stable reference.
         var hIcon = bitmap.GetHicon();
-        return Icon.FromHandle(hIcon);
+        var tempIcon = Icon.FromHandle(hIcon);
+        var icon = (Icon)tempIcon.Clone();
+        DestroyIcon(hIcon); // release the temp unmanaged handle
+
+        return icon;
     }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
+    private static extern bool DestroyIcon(IntPtr hIcon);
 
     public void Dispose()
     {
