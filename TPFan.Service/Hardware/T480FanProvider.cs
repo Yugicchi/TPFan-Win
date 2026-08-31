@@ -74,22 +74,28 @@ public class T480FanProvider : IDisposable
             System.Diagnostics.Debug.WriteLine($"Error reading temperature: {ex.Message}");
         }
 
-        // Fallback: ACPI thermal zone. Win32_PerfFormattedData exposes
-        // Temperature in tenths of Kelvin (matches MSAcpi_ThermalZoneTemperature
-        // semantics) and works without elevation.
+        // Fallback: ACPI thermal zone.
+        // Win32_PerfFormattedData_Counters_ThermalZoneInformation has two
+        // temperature fields and we have to pick the right one:
+        //   Temperature               - tenths of DEGREES CELSIUS
+        //   HighPrecisionTemperature  - tenths of KELVIN
+        // ThinkPad T480 reports the CPU zone via HighPrecisionTemperature
+        // (e.g. 3272 -> 327.2 K -> 54.1 °C). The plain Temperature field
+        // is usually stale and on T480 reads e.g. 327 which would
+        // miscompute to -240 °C if treated as Kelvin.
         try
         {
             var searcher = new ManagementObjectSearcher(
-                "SELECT Temperature FROM Win32_PerfFormattedData_Counters_ThermalZoneInformation");
+                "SELECT Temperature, HighPrecisionTemperature FROM Win32_PerfFormattedData_Counters_ThermalZoneInformation");
 
             using (var results = searcher.Get())
             {
                 foreach (var obj in results)
                 {
-                    if (obj["Temperature"] is not null)
+                    if (obj["HighPrecisionTemperature"] is not null)
                     {
-                        var tenthsKelvin = Convert.ToInt32(obj["Temperature"]);
-                        var celsius = (tenthsKelvin - 2731) / 10; // tenths K -> deg C
+                        var tenthsKelvin = Convert.ToInt32(obj["HighPrecisionTemperature"]);
+                        var celsius = (tenthsKelvin - 2731) / 10;
                         if (celsius is > 0 and < 120)
                         {
                             _lastTemperature = celsius;
@@ -140,32 +146,27 @@ public class T480FanProvider : IDisposable
             System.Diagnostics.Debug.WriteLine($"Error reading fan speed: {ex.Message}");
         }
 
-        // Fallback to EC read via InpOut32 — real fan level from register 0x2F.
-        if (_fanController is not null && _fanController.IsAvailable)
+        // EC register 0x2F semantics are contested (level 0..7,
+        // 0..0x7F, or RPM word) and misreading it produced nonsense
+        // values like 1829% / 95108 RPM on this T480. Until KiKaMo/EC
+        // semantics are confirmed with an external tool (RWEverything),
+        // fall back to the override tracker instead of a raw EC read.
+        // This keeps monitoring honest: show what we last set, not
+        // garbage from the wrong offset.
+        if (_isOverrideActive)
         {
-            try
-            {
-                var percent = await _fanController.GetFanSpeedPercentAsync();
-                if (percent >= 0)
-                {
-                    _lastFanSpeed = percent;
-                    return percent;
-                }
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Error reading fan speed via EC: {ex.Message}");
-            }
+            return _lastFanSpeed;
         }
 
-        return _lastFanSpeed;
+        return 0;
     }
 
     /// <summary>
     /// Get current fan RPM.
     ///
-    /// Tries WMI <c>Win32_Fan.CurrentSpeed</c>, then falls back to estimating
-    /// RPM from the EC level (0..7 → 0..5200).
+    /// Without a WMI fan instance, there is no reliable RPM source until
+    /// the EC RPM registers are confirmed. Return an estimate from the
+    /// override level or 0.
     /// </summary>
     public async Task<int> GetFanRpmAsync()
     {
@@ -190,19 +191,10 @@ public class T480FanProvider : IDisposable
             System.Diagnostics.Debug.WriteLine($"Error reading fan RPM: {ex.Message}");
         }
 
-        // Fallback: estimate RPM from EC level when WMI has no fan instance.
-        if (_fanController is not null && _fanController.IsAvailable)
+        // No WMI fan → fall back to estimate from override when active.
+        if (_isOverrideActive)
         {
-            try
-            {
-                var percent = await _fanController.GetFanSpeedPercentAsync();
-                if (percent >= 0)
-                    return EstimateRpmFromPercent(percent);
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Error estimating RPM via EC: {ex.Message}");
-            }
+            return EstimateRpmFromPercent(_lastFanSpeed);
         }
 
         return 0;
