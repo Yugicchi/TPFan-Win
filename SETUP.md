@@ -142,6 +142,53 @@ Run Visual Studio/terminal as Administrator
 ### Service Not Starting
 Check if port/pipe name conflicts with other instances
 
+### CPU temperature reads as `0` even though the fan is spinning
+
+LibreHardwareMonitorLib relies on Intel `RDMSR` (model-specific register
+reads) to obtain per-core and package temperatures. On Windows 10/11
+machines that ship with **Virtualization-Based Security (VBS)**,
+**Memory Integrity** (HVCI), **Hyper-V**, **WSL2**, **Credential Guard**,
+or **Defender Application Guard** enabled, the hypervisor traps MSR
+reads and LHM reports every CPU temperature sensor as `null`. You can
+confirm with:
+
+```powershell
+systeminfo | findstr /C:"Virtualization" /C:"hypervisor"
+# or
+Get-CimInstance Win32_DeviceGuard | Select-Object VirtualizationBasedSecurityStatus
+```
+
+When that happens `TPFan.Service` automatically falls back to the ACPI
+thermal-zone counter, so you will see a non-zero temperature printed at
+startup:
+
+```
+LHM CPU temperatures are empty (likely VBS / Hyper-V blocking MSR) —
+falling back to ACPI thermal-zone counter for CPU temperature.
+Current temperature: 32°C
+```
+
+The fan % and RPM however will read `0` because LHM also returns no fan
+sensors under VBS and the service does not guess. There are three
+workarounds, in order of safety:
+
+1. **Install Lenovo Vantage** (or the standalone "Lenovo System
+   Interface Foundation" / "Energy Management" driver). This registers
+   the `root\WMI\Lenovo_Fan` (or `IdeaFan`) class which the service
+   probes for fan % and RPM. CPU temperature stays on the ACPI
+   fallback.
+2. **Disable Memory Integrity** under *Windows Security → Device
+   Security → Core isolation → Memory integrity*. Reboot required.
+   LHM's MSR path is restored, so all sensors come back.
+3. **Disable the hypervisor entirely** (only if you do not need
+   WSL2/Hyper-V): run `bcdedit /set hypervisorlaunchtype off` from an
+   elevated command prompt and reboot. This is the nuclear option.
+
+The fan *write* (override slider) is independent of the monitoring
+limitation: as long as the InpOut32 driver is installed and the service
+runs elevated, the override still works. See "EC Fan Control (T480)"
+below.
+
 ## EC Fan Control (ThinkPad T480)
 
 > **Hardware only.** Without the InpOut32 driver and an elevated process, the

@@ -80,6 +80,16 @@ Ketika user mengaktifkan manual override:
 
 Tanpa driver InpOut32 atau tanpa Administrator, override adalah no-op (returns `false`) dan UI tetap di read-only mode. Lihat SETUP.md bagian "EC Fan Control (T480)".
 
+## Sensor Sources (What Feeds the Curve)
+
+| Signal | Primary source | Fallback | Notes |
+|--------|----------------|----------|-------|
+| CPU temp | LibreHardwareMonitor (RDMSR) | `root\CIMV2\Win32_PerfFormattedData_Counters_ThermalZoneInformation` (`Temperature/10`, °C) — same counter HWMonitor uses for `\_TZ.THM0` | Falls back when VBS/Hyper-V traps MSR reads; see SETUP.md "Troubleshooting." |
+| Fan %  | LibreHardwareMonitor `Control` | `root\WMI\Lenovo_Fan` (Lenovo Vantage driver) | Deliberately **not** EC register `0x2F` — its mirror value echoes `0x00/0x80/0xFF` and produced `1829%`. |
+| Fan RPM| LibreHardwareMonitor `Fan`     | `root\WMI\Lenovo_Fan` | Same as fan % |
+
+All fan % values are clamped `0..100`; RPM is clamped `≥0`. Unknown values surface as `0` rather than garbage.
+
 ## Curve Detection Algorithm
 
 ```csharp
