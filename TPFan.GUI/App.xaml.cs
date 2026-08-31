@@ -35,17 +35,17 @@ public partial class App : Application
 
         Log("GUI starting...");
 
-        // Try to start the service if it's not already running
-        var serviceStarted = EnsureServiceAsync().GetAwaiter().GetResult();
-        if (!serviceStarted)
+        // Start service async — don't block the UI thread!
+        // The ViewModel will handle reconnection when the service pipe is ready.
+        _ = Task.Run(EnsureServiceAsync).ContinueWith(t =>
         {
-            Log("WARNING: Could not start TPFan.Service. The GUI may not function correctly.");
-            Debug.WriteLine("[App] Service not available — GUI will attempt to connect anyway.");
-        }
-        else
-        {
-            Log("Service connected or started successfully.");
-        }
+            if (t.Result)
+                Log("Service connected or started successfully.");
+            else
+                Log("WARNING: Could not start TPFan.Service. GUI will keep trying to connect.");
+        });
+
+        // Window will show immediately via StartupUri
     }
 
     private static async Task<bool> EnsureServiceAsync()

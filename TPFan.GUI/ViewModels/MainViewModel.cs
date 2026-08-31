@@ -99,11 +99,8 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         try
         {
             IsServiceRunning = await _client.IsServiceRunningAsync();
-            if (!IsServiceRunning)
-            {
-                _pollTimer?.Stop();
-                return;
-            }
+            // Don't stop polling if service not running - we'll keep trying
+            // and the ServiceLauncher will start it
 
             try { _currentCurve = await _client.GetFanCurveAsync(); } catch { }
             await PollStatusAsync();
@@ -124,7 +121,7 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         {
             var status = await _client.GetFanStatusAsync();
             _currentStatus = status;
-            IsServiceRunning = status.IsOverrideActive || status.Rpm > 0 || status.TemperatureCelsius > 0 || true;
+            IsServiceRunning = true;
             OnPropertyChanged(nameof(TemperatureCelsius));
             OnPropertyChanged(nameof(SpeedPercent));
             OnPropertyChanged(nameof(Rpm));
@@ -133,10 +130,16 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
             OnPropertyChanged(nameof(TemperatureColorBrush));
             OnPropertyChanged(nameof(ModeDisplay));
             OnPropertyChanged(nameof(ModeColorBrush));
+            OnPropertyChanged(nameof(IsServiceRunning));
+            OnPropertyChanged(nameof(ConnectionColorBrush));
+            OnPropertyChanged(nameof(ConnectionStatus));
         }
         catch
         {
-            // Best-effort polling
+            IsServiceRunning = false;
+            OnPropertyChanged(nameof(IsServiceRunning));
+            OnPropertyChanged(nameof(ConnectionColorBrush));
+            OnPropertyChanged(nameof(ConnectionStatus));
         }
     }
 
