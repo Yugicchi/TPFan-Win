@@ -1,4 +1,4 @@
-namespace TPFan.Service.Hardware;
+namespace TPFan.GUI.Hardware;
 
 /// <summary>
 /// Embedded Controller (EC) register map used to drive the fan on ThinkPad T480.

@@ -39,10 +39,7 @@ jobs:
     - name: Build Shared project
       run: dotnet build TPFan.Shared/TPFan.Shared.csproj --configuration ${{ env.CONFIGURATION }} --no-restore
 
-    - name: Build Service project
-      run: dotnet build TPFan.Service/TPFan.Service.csproj --configuration ${{ env.CONFIGURATION }} --no-restore
-
-    - name: Build GUI project (WPF)
+    - name: Build GUI project (WPF, single binary)
       run: dotnet build TPFan.GUI/TPFan.GUI.csproj --configuration ${{ env.CONFIGURATION }} --no-restore --verbosity minimal
 
   test:
@@ -86,13 +83,10 @@ jobs:
       with:
         dotnet-version: ${{ env.DOTNET_VERSION }}
 
-    - name: Publish Service (Self-contained)
-      run: dotnet publish TPFan.Service/TPFan.Service.csproj --configuration ${{ env.CONFIGURATION }} --runtime win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true --output ./publish/tpfan
+    - name: Publish GUI (Single binary, everything in-process)
+      run: dotnet publish TPFan.GUI/TPFan.GUI.csproj --configuration ${{ env.CONFIGURATION }} --runtime win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true --output ./publish/tpfan
 
-    - name: Publish GUI (WPF, Self-contained, into same directory)
-      run: dotnet publish TPFan.GUI/TPFan.GUI.csproj --configuration ${{ env.CONFIGURATION }} --runtime win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true --output ./publish/tpfan
-
-    - name: Upload TPFan artifact (Service + GUI + inpoutx64.dll)
+    - name: Upload TPFan artifact (single TPFan.GUI.exe + inpoutx64.dll)
       uses: actions/upload-artifact@v7
       with:
         name: TPFan-Win

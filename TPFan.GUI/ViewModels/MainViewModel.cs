@@ -1,22 +1,23 @@
 using System;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using System.Windows;
 using System.Windows.Media;
 using System.Windows.Threading;
-using TPFan.GUI.Services;
+using TPFan.GUI.Hardware;
 using TPFan.Shared.Models;
 
 namespace TPFan.GUI.ViewModels;
 
 public class MainViewModel : INotifyPropertyChanged, IDisposable
 {
-    private readonly FanServiceClient _client = new();
+    private readonly T480FanProvider _provider;
     private DispatcherTimer? _pollTimer;
     private bool _disposed;
 
     private FanStatus _currentStatus = new()
     {
-        TemperatureCelsius = 32, Rpm = 0, SpeedPercent = 0, IsOverrideActive = false
+        TemperatureCelsius = 0, Rpm = 0, SpeedPercent = 0, IsOverrideActive = false
     };
     private FanCurve? _currentCurve;
     private int _selectedSpeedPercent;
@@ -24,6 +25,15 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
     private bool _isLoading;
 
     public event PropertyChangedEventHandler? PropertyChanged;
+
+    public MainViewModel(T480FanProvider? provider)
+    {
+        _provider = provider!;
+        _pollTimer = new DispatcherTimer(TimeSpan.FromSeconds(2), DispatcherPriority.Background, async (_, _) => await PollStatusAsync(), System.Windows.Application.Current.Dispatcher)
+        {
+            IsEnabled = true
+        };
+    }
 
     public int TemperatureCelsius => (int)Math.Round((double)_currentStatus.TemperatureCelsius);
 
@@ -50,6 +60,8 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         {
             _selectedSpeedPercent = value;
             OnPropertyChanged();
+            // Apply immediately if override is active
+            if (_isOverrideEnabled) { _ = ApplyOverrideAsync(); }
         }
     }
 
@@ -65,7 +77,7 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
 
     public string ModeDisplay => _currentStatus.IsOverrideActive ? "Manual" : "Auto";
 
-    public Brush TemperatureColorBrush => TemperatureCelsius switch
+    public System.Windows.Media.Brush TemperatureColorBrush => TemperatureCelsius switch
     {
         <= 45 => new SolidColorBrush((Color)ColorConverter.ConvertFromString("#4CD964")),
         <= 65 => new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FFCC00")),
@@ -73,46 +85,37 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         _ => new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FF3B30"))
     };
 
-    public Brush ModeColorBrush => _currentStatus.IsOverrideActive
+    public System.Windows.Media.Brush ModeColorBrush => _currentStatus.IsOverrideActive
         ? new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FF9500"))
         : new SolidColorBrush((Color)ColorConverter.ConvertFromString("#4CD964"));
 
-    public Brush ConnectionColorBrush => IsServiceRunning ? new SolidColorBrush((Color)ColorConverter.ConvertFromString("#4CD964")) : new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FF3B30"));
+    public System.Windows.Media.Brush ConnectionColorBrush => _provider != null
+        ? new SolidColorBrush((Color)ColorConverter.ConvertFromString("#4CD964"))
+        : new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FF3B30"));
 
-    public string ConnectionStatus => IsServiceRunning ? "Connected to TPFan Service" : "Service unavailable";
-
-    public bool IsServiceRunning { get; private set; }
+    public string ConnectionStatus => _provider != null ? "Hardware connected" : "Hardware unavailable";
 
     public FanCurve? FanCurve => _currentCurve;
-
-    public MainViewModel()
-    {
-        _pollTimer = new DispatcherTimer(TimeSpan.FromSeconds(2), DispatcherPriority.Background, async (_, _) => await PollStatusAsync(), System.Windows.Application.Current.Dispatcher)
-        {
-            IsEnabled = true
-        };
-    }
 
     public async System.Threading.Tasks.Task InitializeAsync()
     {
         IsLoading = true;
         try
         {
-            IsServiceRunning = await _client.IsServiceRunningAsync();
-            // Don't stop polling if service not running - we'll keep trying
-            // and the ServiceLauncher will start it
+            if (_provider == null)
+            {
+                IsLoading = false;
+                return;
+            }
 
-            try { _currentCurve = await _client.GetFanCurveAsync(); } catch { }
-            // Always poll once to update connection state and any partial status
+            try { _currentCurve = await _provider.DetectFanCurveAsync(); }
+            catch { /* best effort */ }
+
             await PollStatusAsync();
         }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"Init error: {ex.Message}");
-            IsServiceRunning = false;
-            OnPropertyChanged(nameof(IsServiceRunning));
-            OnPropertyChanged(nameof(ConnectionColorBrush));
-            OnPropertyChanged(nameof(ConnectionStatus));
         }
         finally
         {
@@ -122,37 +125,34 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
 
     private async System.Threading.Tasks.Task PollStatusAsync()
     {
+        if (_provider == null || _disposed) return;
         try
         {
-            var status = await _client.GetFanStatusAsync();
+            var status = await _provider.GetFanStatusAsync();
             _currentStatus = status;
-            IsServiceRunning = true;
             OnPropertyChanged(nameof(TemperatureCelsius));
             OnPropertyChanged(nameof(SpeedPercent));
             OnPropertyChanged(nameof(Rpm));
             OnPropertyChanged(nameof(TemperatureDisplay));
             OnPropertyChanged(nameof(SpeedPercentDisplay));
-            OnPropertyChanged(nameof(TemperatureColorBrush));
             OnPropertyChanged(nameof(ModeDisplay));
+            OnPropertyChanged(nameof(TemperatureColorBrush));
             OnPropertyChanged(nameof(ModeColorBrush));
-            OnPropertyChanged(nameof(IsServiceRunning));
             OnPropertyChanged(nameof(ConnectionColorBrush));
             OnPropertyChanged(nameof(ConnectionStatus));
         }
-        catch
+        catch (Exception ex)
         {
-            IsServiceRunning = false;
-            OnPropertyChanged(nameof(IsServiceRunning));
-            OnPropertyChanged(nameof(ConnectionColorBrush));
-            OnPropertyChanged(nameof(ConnectionStatus));
+            System.Diagnostics.Debug.WriteLine($"Poll error: {ex.Message}");
         }
     }
 
     private async System.Threading.Tasks.Task ApplyOverrideAsync()
     {
+        if (_provider == null) return;
         try
         {
-            await _client.SetFanSpeedOverrideAsync(_selectedSpeedPercent);
+            await _provider.SetFanSpeedOverrideAsync(_selectedSpeedPercent);
             await PollStatusAsync();
         }
         catch { /* best effort */ }
@@ -160,9 +160,10 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
 
     private async System.Threading.Tasks.Task ResetOverrideAsync()
     {
+        if (_provider == null) return;
         try
         {
-            await _client.ResetFanOverrideAsync();
+            await _provider.ResetFanOverrideAsync();
             await PollStatusAsync();
         }
         catch { /* best effort */ }
@@ -178,7 +179,6 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         if (_disposed) return;
         _disposed = true;
         _pollTimer?.Stop();
-        _client.Dispose();
         GC.SuppressFinalize(this);
     }
 }

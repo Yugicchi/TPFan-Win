@@ -1,4 +1,4 @@
-using TPFan.Service.Hardware;
+using TPFan.GUI.Hardware;
 
 namespace TPFan.Tests;
 

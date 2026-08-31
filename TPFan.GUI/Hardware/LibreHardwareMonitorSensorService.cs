@@ -4,7 +4,7 @@ using System.Linq;
 using System.Management;
 using LibreHardwareMonitor.Hardware;
 
-namespace TPFan.Service.Hardware;
+namespace TPFan.GUI.Hardware;
 
 /// <summary>
 /// Reads CPU temperature, fan speed &amp; RPM via LibreHardwareMonitor.
@@ -38,7 +38,7 @@ public sealed class LibreHardwareMonitorSensorService : IDisposable
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"LHM open failed: {ex.Message}");
+            Debug.WriteLine($"LHM open failed: {ex.Message}");
         }
     }
 
@@ -55,7 +55,7 @@ public sealed class LibreHardwareMonitorSensorService : IDisposable
             .SelectMany(h => h.Sensors)
             .Where(s => s.SensorType == SensorType.Temperature)
             .ToList();
-        System.Diagnostics.Debug.WriteLine($"LHM temps (cpu): {temps.Count} sensors: {string.Join(", ", temps.Select(s => $"{s.Name}={s.Value}"))}");
+        Debug.WriteLine($"LHM temps (cpu): {temps.Count} sensors: {string.Join(", ", temps.Select(s => $"{s.Name}={s.Value}"))}");
 
         var withValue = temps.Where(s => s.Value is not null).ToList();
         // Prefer "Core Max / Package / CPU Package" over individual cores
@@ -166,7 +166,7 @@ public sealed class LibreHardwareMonitorSensorService : IDisposable
                 .SelectMany(h => h.Sensors)
                 .Where(s => s.SensorType == SensorType.Control)
                 .ToList();
-            System.Diagnostics.Debug.WriteLine($"LHM controls: {controls.Count} sensors: {string.Join(", ", controls.Select(s => $"{s.Name}={s.Value}"))}");
+            Debug.WriteLine($"LHM controls: {controls.Count} sensors: {string.Join(", ", controls.Select(s => $"{s.Name}={s.Value}"))}");
             var withValue = controls.Where(s => s.Value is not null).ToList();
             var best = withValue.FirstOrDefault(s =>
                 s.Name.Contains("Fan", StringComparison.OrdinalIgnoreCase))
@@ -192,7 +192,7 @@ public sealed class LibreHardwareMonitorSensorService : IDisposable
                 .SelectMany(h => h.Sensors)
                 .Where(s => s.SensorType == SensorType.Fan)
                 .ToList();
-            System.Diagnostics.Debug.WriteLine($"LHM fans: {fans.Count} sensors: {string.Join(", ", fans.Select(s => $"{s.Name}={s.Value}"))}");
+            Debug.WriteLine($"LHM fans: {fans.Count} sensors: {string.Join(", ", fans.Select(s => $"{s.Name}={s.Value}"))}");
             var withValue = fans.Where(s => s.Value is not null).ToList();
             var best = withValue.FirstOrDefault(s =>
                 s.Name.Contains("Fan", StringComparison.OrdinalIgnoreCase))
@@ -302,13 +302,13 @@ public sealed class LibreHardwareMonitorSensorService : IDisposable
     {
         var prefix = new string(' ', indent * 2);
         var msg = $"{prefix}HW: {hw.HardwareType} {hw.Name} (identifier={hw.Identifier})";
-        System.Diagnostics.Debug.WriteLine(msg);
+        Debug.WriteLine(msg);
         // Write to stdout as well so `dotnet run --configuration Release` exposes it
         Console.WriteLine(msg);
         foreach (var s in hw.Sensors)
         {
             var sensorMsg = $"{prefix}  SENSOR: {s.SensorType} {s.Name} = {s.Value}";
-            System.Diagnostics.Debug.WriteLine(sensorMsg);
+            Debug.WriteLine(sensorMsg);
             Console.WriteLine(sensorMsg);
         }
     }

@@ -7,10 +7,10 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
-using TPFan.Service.Hardware;
+using TPFan.GUI.Hardware;
 using TPFan.Shared.Models;
 
-namespace TPFan.Service.UI;
+namespace TPFan.GUI.UI;
 
 /// <summary>
 /// Manages the Windows System Tray (Notification Area) icon for TPFan-Win.
@@ -49,9 +49,9 @@ public sealed class SystemTrayManager : IDisposable
 
         _uiThread = new Thread(() =>
         {
-            Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
-            Application.EnableVisualStyles();
-            Application.SetCompatibleTextRenderingDefault(false);
+            System.Windows.Forms.Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
+            System.Windows.Forms.Application.EnableVisualStyles();
+            System.Windows.Forms.Application.SetCompatibleTextRenderingDefault(false);
             // Allow cross-thread property access so RefreshStatus can update UI directly
             // from the timer callback thread without needing BeginInvoke.
             Control.CheckForIllegalCrossThreadCalls = false;
@@ -59,7 +59,7 @@ public sealed class SystemTrayManager : IDisposable
             InitializeTray();
             readyEvent.Set();
 
-            Application.Run();
+            System.Windows.Forms.Application.Run();
         })
         {
             IsBackground = true,
@@ -159,7 +159,7 @@ public sealed class SystemTrayManager : IDisposable
                     await _fanProvider.ResetFanOverrideAsync();
                 }
                 catch { /* best effort */ }
-                Application.ExitThread();
+                System.Windows.Forms.Application.ExitThread();
                 Environment.Exit(0);
             });
         });
@@ -286,19 +286,19 @@ public sealed class SystemTrayManager : IDisposable
 
         g.SmoothingMode = SmoothingMode.AntiAlias;
         g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
-        g.Clear(Color.Transparent);
+        g.Clear(System.Drawing.Color.Transparent);
 
         // Color based on temperature
-        Color textColor = temp switch
+        System.Drawing.Color textColor = temp switch
         {
-            <= 45 => Color.FromArgb(76, 217, 100),   // Cool green
-            <= 65 => Color.FromArgb(255, 204, 0),   // Warm yellow
-            <= 80 => Color.FromArgb(255, 149, 0),   // Orange
-            _ => Color.FromArgb(255, 59, 48)        // Hot red
+            <= 45 => System.Drawing.Color.FromArgb(76, 217, 100),   // Cool green
+            <= 65 => System.Drawing.Color.FromArgb(255, 204, 0),   // Warm yellow
+            <= 80 => System.Drawing.Color.FromArgb(255, 149, 0),   // Orange
+            _ => System.Drawing.Color.FromArgb(255, 59, 48)        // Hot red
         };
 
         // Dark rounded pill background
-        using var bgBrush = new SolidBrush(Color.FromArgb(200, 20, 20, 20));
+        using var bgBrush = new SolidBrush(System.Drawing.Color.FromArgb(200, 20, 20, 20));
         g.FillEllipse(bgBrush, 1, 1, size - 2, size - 2);
 
         // Draw temperature string
@@ -346,7 +346,7 @@ public sealed class SystemTrayManager : IDisposable
 
         if (_uiThread != null && _uiThread.IsAlive)
         {
-            Application.ExitThread();
+            System.Windows.Forms.Application.ExitThread();
         }
 
         GC.SuppressFinalize(this);

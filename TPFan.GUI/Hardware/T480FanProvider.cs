@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using TPFan.Shared.Models;
 
-namespace TPFan.Service.Hardware;
+namespace TPFan.GUI.Hardware;
 
 /// <summary>
 /// Provides fan curve detection and status reading on Windows laptops.

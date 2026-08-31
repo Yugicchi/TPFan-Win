@@ -10,12 +10,7 @@
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
 
-    <!-- This test project deliberately targets net8.0-windows10.0.19041.0
-         (not net8.0) so it can reference the same TPFan.Service assembly
-         the service ships. The unit tests in this project are pure logic
-         and never instantiate the SensorService, but referencing the real
-         assembly ensures regressions in the production code surface here
-         (e.g. public API changes), not just at runtime. -->
+    <!-- This test project targets net8.0-windows10.0.19041.0 to match the GUI assembly -->
   </PropertyGroup>
 
   <ItemGroup>
@@ -26,7 +21,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\TPFan.Service\TPFan.Service.csproj" />
+    <ProjectReference Include="..\TPFan.GUI\TPFan.GUI.csproj" />
     <ProjectReference Include="..\TPFan.Shared\TPFan.Shared.csproj" />
   </ItemGroup>
 

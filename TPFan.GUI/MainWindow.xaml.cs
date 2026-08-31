@@ -13,7 +13,8 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
-        _vm = new MainViewModel();
+        var provider = App.CurrentProvider;
+        _vm = new MainViewModel(provider);
         DataContext = _vm;
         Loaded += async (_, _) => await _vm.InitializeAsync();
         Closed += (_, _) => _vm.Dispose();
@@ -71,7 +72,7 @@ public partial class MainWindow : Window
             {
                 Width = 10, Height = 10,
                 Fill = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FF6B00")),
-                Stroke = Brushes.White,
+                Stroke = System.Windows.Media.Brushes.White,
                 StrokeThickness = 2
             };
             Canvas.SetLeft(ellipse, cx - 5);

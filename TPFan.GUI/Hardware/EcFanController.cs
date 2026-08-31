@@ -7,7 +7,7 @@ using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace TPFan.Service.Hardware;
+namespace TPFan.GUI.Hardware;
 
 /// <summary>
 /// Drives the ThinkPad T480 fan via raw I/O port writes to the Embedded Controller.
