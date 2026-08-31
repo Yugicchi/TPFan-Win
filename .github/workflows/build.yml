@@ -42,9 +42,8 @@ jobs:
     - name: Build Service project
       run: dotnet build TPFan.Service/TPFan.Service.csproj --configuration ${{ env.CONFIGURATION }} --no-restore
 
-    - name: Build UWP project
-      run: dotnet build TPFan.UWP/TPFan.UWP.csproj --configuration ${{ env.CONFIGURATION }} --no-restore --verbosity minimal
-      continue-on-error: true  # UWP build may fail without full SDK, but service is the priority
+    - name: Build GUI project (WPF)
+      run: dotnet build TPFan.GUI/TPFan.GUI.csproj --configuration ${{ env.CONFIGURATION }} --no-restore --verbosity minimal
 
   test:
     name: Run Tests
