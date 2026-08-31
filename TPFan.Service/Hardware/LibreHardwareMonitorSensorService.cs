@@ -125,12 +125,15 @@ public sealed class LibreHardwareMonitorSensorService : IDisposable
     private static void Dump(LibreHardwareMonitor.Hardware.IHardware hw, int indent)
     {
         var prefix = new string(' ', indent * 2);
-        System.Diagnostics.Debug.WriteLine(
-            $"{prefix}HW: {hw.HardwareType} {hw.Name} (identifier={hw.Identifier})");
+        var msg = $"{prefix}HW: {hw.HardwareType} {hw.Name} (identifier={hw.Identifier})";
+        System.Diagnostics.Debug.WriteLine(msg);
+        // Write to stdout as well so `dotnet run --configuration Release` exposes it
+        Console.WriteLine(msg);
         foreach (var s in hw.Sensors)
         {
-            System.Diagnostics.Debug.WriteLine(
-                $"{prefix}  SENSOR: {s.SensorType} {s.Name} = {s.Value}");
+            var sensorMsg = $"{prefix}  SENSOR: {s.SensorType} {s.Name} = {s.Value}";
+            System.Diagnostics.Debug.WriteLine(sensorMsg);
+            Console.WriteLine(sensorMsg);
         }
     }
 
