@@ -29,6 +29,8 @@ public sealed class SystemTrayManager : IDisposable
     private System.Threading.Timer? _refreshTimer;
     private bool _disposed;
     private static T480FanProvider? _providerRef;
+    // NotifyIcon has a hidden window handle we can use for Invoke/BeginInvoke
+    private Control? _trayControl;
 
     private static SystemTrayManager? _instance; // singleton reference for static exit handler
 
@@ -120,7 +122,7 @@ public sealed class SystemTrayManager : IDisposable
                 try
                 {
                     await _fanProvider.ResetFanOverrideAsync();
-                    _notifyIcon?.ContextMenuStrip?.BeginInvoke((MethodInvoker)(() => RefreshStatus()));
+                    _trayControl?.BeginInvoke((MethodInvoker)(() => RefreshStatus()));
                 }
                 catch (Exception ex)
                 {
@@ -164,21 +166,26 @@ public sealed class SystemTrayManager : IDisposable
             ContextMenuStrip = _contextMenu,
             Visible = true
         };
+
+        // Hidden control used exclusively for Invoke/BeginInvoke to marshal callbacks
+        // onto the tray's STA message loop (the one that owns the NotifyIcon HWND).
+        _trayControl = new Control { Width = 0, Height = 0, Visible = false };
+        _trayControl.CreateControl();
     }
 
     private void AddOverrideOption(ToolStripMenuItem parent, string label, int percent)
     {
         var item = new ToolStripMenuItem(label, null, (s, e) =>
         {
-            // Do NOT use async void — executes on STA thread.
-            // Fire-and-forget via Task.Run with capture of local state.
+            // Fire-and-forget on a thread pool thread so the STA message loop
+            // remains responsive. The EC write is synchronous but is a quick
+            // port I/O spin — not a blocking syscall.
             _ = Task.Run(async () =>
             {
                 try
                 {
                     await _fanProvider.SetFanSpeedOverrideAsync(percent);
-                    // Refresh must marshal back to STA thread
-                    _notifyIcon?.ContextMenuStrip?.BeginInvoke((MethodInvoker)(() => RefreshStatus()));
+                    _trayControl?.BeginInvoke((MethodInvoker)(() => RefreshStatus()));
                 }
                 catch (Exception ex)
                 {
@@ -199,15 +206,8 @@ public sealed class SystemTrayManager : IDisposable
             var temp = (int)Math.Round((double)status.TemperatureCelsius);
             var modeStr = status.IsOverrideActive ? $"Manual ({status.SpeedPercent}%)" : "Auto";
 
-            // Update UI on tray STA thread
-            if (_notifyIcon.ContextMenuStrip?.InvokeRequired == true)
-            {
-                _notifyIcon.ContextMenuStrip.BeginInvoke(() => UpdateUiState(status, temp, modeStr));
-            }
-            else
-            {
-                UpdateUiState(status, temp, modeStr);
-            }
+            // Marshal UI update onto STA thread via hidden control's window handle
+            _trayControl?.BeginInvoke((MethodInvoker)(() => UpdateUiState(status, temp, modeStr)));
         }
         catch (Exception ex)
         {
@@ -319,6 +319,7 @@ public sealed class SystemTrayManager : IDisposable
         }
 
         _contextMenu?.Dispose();
+        _trayControl?.Dispose();
 
         if (_uiThread != null && _uiThread.IsAlive)
         {
