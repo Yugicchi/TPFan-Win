@@ -103,11 +103,16 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
             // and the ServiceLauncher will start it
 
             try { _currentCurve = await _client.GetFanCurveAsync(); } catch { }
+            // Always poll once to update connection state and any partial status
             await PollStatusAsync();
         }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"Init error: {ex.Message}");
+            IsServiceRunning = false;
+            OnPropertyChanged(nameof(IsServiceRunning));
+            OnPropertyChanged(nameof(ConnectionColorBrush));
+            OnPropertyChanged(nameof(ConnectionStatus));
         }
         finally
         {
