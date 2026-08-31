@@ -100,5 +100,5 @@ jobs:
         retention-days: 30
 
     - name: List published files
-      run: ls -la ./publish/tpfan/
+      run: Get-ChildItem ./publish/tpfan/ | Select-Object Name,Length,LastWriteTime
       shell: pwsh
