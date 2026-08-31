@@ -119,6 +119,7 @@ public sealed class SystemTrayManager : IDisposable
 
         _autoMenuItem = new ToolStripMenuItem("Auto Mode (Firmware Curve)", null, (s, e) =>
         {
+            _contextMenu?.Close();
             _ = Task.Run(async () =>
             {
                 try
@@ -187,9 +188,9 @@ public sealed class SystemTrayManager : IDisposable
     {
         var item = new ToolStripMenuItem(label, null, (s, e) =>
         {
-            // Fire-and-forget on a thread pool thread so the STA message loop
-            // remains responsive. The EC write is synchronous but is a quick
-            // port I/O spin — not a blocking syscall.
+            // Close menu immediately so the user sees a clean state; the async
+            // fan command runs off the STA thread.
+            _contextMenu?.Close();
             _ = Task.Run(async () =>
             {
                 try
@@ -210,17 +211,30 @@ public sealed class SystemTrayManager : IDisposable
     {
         if (_notifyIcon == null || _disposed) return;
 
+        // Skip refresh while a context menu is open — modifying Text/Icon of the
+        // owner while the menu is rendering causes it to freeze.
+        if (_contextMenu != null && _contextMenu.Visible) return;
+
         try
         {
             var status = _fanProvider.GetFanStatusAsync().GetAwaiter().GetResult();
             var temp = (int)Math.Round((double)status.TemperatureCelsius);
             var modeStr = status.IsOverrideActive ? $"Manual ({status.SpeedPercent}%)" : "Auto";
 
-            // Marshal UI update onto STA thread via hidden form's window handle
+            // Build the Icon on the worker thread (no UI dependency, no STA requirement).
+            // We do NOT Dispose the previous Icon here because the swap to _notifyIcon.Icon
+            // happens on the STA thread; the old Icon will be Disposed there.
+            var newIcon = CreateTempIcon(temp);
+
+            // Marshal only the UI swap onto the STA thread so menu/icon stay responsive.
             var f = _trayForm;
             if (f != null && f.IsHandleCreated)
             {
-                f.BeginInvoke((MethodInvoker)(() => UpdateUiState(status, temp, modeStr)));
+                f.BeginInvoke((MethodInvoker)(() => UpdateUiState(status, temp, modeStr, newIcon)));
+            }
+            else
+            {
+                newIcon.Dispose();
             }
         }
         catch (Exception ex)
@@ -229,18 +243,18 @@ public sealed class SystemTrayManager : IDisposable
         }
     }
 
-    private void UpdateUiState(FanStatus status, int temp, string modeStr)
+    private void UpdateUiState(FanStatus status, int temp, string modeStr, Icon newIcon)
     {
-        if (_disposed || _notifyIcon == null) return;
+        if (_disposed || _notifyIcon == null) { newIcon.Dispose(); return; }
 
         // Tooltip text (max 63 chars on Windows)
         var tooltip = $"TPFan: {temp}°C | {status.Rpm} RPM | {modeStr}";
         if (tooltip.Length > 63) tooltip = tooltip[..63];
         _notifyIcon.Text = tooltip;
 
-        // Dynamic badge icon showing temperature
+        // Dynamic badge icon showing temperature — swap first, then dispose old.
         var oldIcon = _notifyIcon.Icon;
-        _notifyIcon.Icon = CreateTempIcon(temp);
+        _notifyIcon.Icon = newIcon;
         oldIcon?.Dispose();
 
         if (_statusMenuItem != null)
