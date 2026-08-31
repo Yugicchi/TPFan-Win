@@ -28,7 +28,7 @@ public sealed class SystemTrayManager : IDisposable
     private Thread? _uiThread;
     private System.Threading.Timer? _refreshTimer;
     private bool _disposed;
-    private static T480FanProvider? _providerRef;
+    private static T480FanProvider? _providerRef; // static exit handler reference
     // Hidden Form provides a real HWND for Invoke/BeginInvoke from worker threads.
     // A bare Control without a parent never gets a handle, so its BeginInvoke
     // would silently drop posted delegates.
@@ -39,6 +39,7 @@ public sealed class SystemTrayManager : IDisposable
     public SystemTrayManager(T480FanProvider fanProvider)
     {
         _fanProvider = fanProvider;
+        _providerRef = fanProvider;
         _instance = this;
     }
 
@@ -260,11 +261,14 @@ public sealed class SystemTrayManager : IDisposable
 
         if (_overrideMenu != null)
         {
+            var speedPercent = status.SpeedPercent;
+            var isOverride = status.IsOverrideActive;
+            var targetText = $"{speedPercent}%";
             foreach (ToolStripItem item in _overrideMenu.DropDownItems)
             {
-                if (item is ToolStripMenuItem mi)
+                if (item is ToolStripMenuItem mi && mi.Text != null)
                 {
-                    mi.Checked = status.IsOverrideActive && mi.Text.Contains($"{status.SpeedPercent}%");
+                    mi.Checked = isOverride && mi.Text.Contains(targetText);
                 }
             }
         }
