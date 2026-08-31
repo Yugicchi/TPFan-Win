@@ -45,13 +45,15 @@ public sealed class SystemTrayManager : IDisposable
     public void Start()
     {
         var readyEvent = new ManualResetEventSlim(false);
-        _providerRef = _fanProvider;
 
         _uiThread = new Thread(() =>
         {
             Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
+            // Allow cross-thread property access so RefreshStatus can update UI directly
+            // from the timer callback thread without needing BeginInvoke.
+            Control.CheckForIllegalCrossThreadCalls = false;
 
             InitializeTray();
             readyEvent.Set();
@@ -125,7 +127,7 @@ public sealed class SystemTrayManager : IDisposable
                 try
                 {
                     await _fanProvider.ResetFanOverrideAsync();
-                    _trayForm?.BeginInvoke((MethodInvoker)(() => RefreshStatus()));
+                    RefreshStatus();
                 }
                 catch (Exception ex)
                 {
@@ -196,7 +198,7 @@ public sealed class SystemTrayManager : IDisposable
                 try
                 {
                     await _fanProvider.SetFanSpeedOverrideAsync(percent);
-                    _trayForm?.BeginInvoke((MethodInvoker)(() => RefreshStatus()));
+                    RefreshStatus();
                 }
                 catch (Exception ex)
                 {
@@ -222,20 +224,9 @@ public sealed class SystemTrayManager : IDisposable
             var modeStr = status.IsOverrideActive ? $"Manual ({status.SpeedPercent}%)" : "Auto";
 
             // Build the Icon on the worker thread (no UI dependency, no STA requirement).
-            // We do NOT Dispose the previous Icon here because the swap to _notifyIcon.Icon
-            // happens on the STA thread; the old Icon will be Disposed there.
             var newIcon = CreateTempIcon(temp);
 
-            // Marshal only the UI swap onto the STA thread so menu/icon stay responsive.
-            var f = _trayForm;
-            if (f != null && f.IsHandleCreated)
-            {
-                f.BeginInvoke((MethodInvoker)(() => UpdateUiState(status, temp, modeStr, newIcon)));
-            }
-            else
-            {
-                newIcon.Dispose();
-            }
+            UpdateUiState(status, temp, modeStr, newIcon);
         }
         catch (Exception ex)
         {
