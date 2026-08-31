@@ -75,31 +75,30 @@ public class T480FanProvider : IDisposable
         }
 
         // Fallback: ACPI thermal zone.
-        // Win32_PerfFormattedData_Counters_ThermalZoneInformation has two
-        // temperature fields and we have to pick the right one:
+        // Win32_PerfFormattedData_Counters_ThermalZoneInformation exposes
+        // two temperature fields. Per MSDN:
         //   Temperature               - tenths of DEGREES CELSIUS
         //   HighPrecisionTemperature  - tenths of KELVIN
-        // ThinkPad T480 reports the CPU zone via HighPrecisionTemperature
-        // (e.g. 3272 -> 327.2 K -> 54.1 °C). The plain Temperature field
-        // is usually stale and on T480 reads e.g. 327 which would
-        // miscompute to -240 °C if treated as Kelvin.
+        // On ThinkPad T480 the ACPI driver publishes both, but the
+        // HighPrecisionTemperature value is unreliable (we observed
+        // HPT=3662 while HWMonitor reported 51 °C on Package and 56 °C
+        // on \_TZ.THM0 — HPT/10-273.1 would compute to 93 °C which is
+        // impossible). The plain Temperature field tracks HWMonitor
+        // (e.g. 339 -> 33.9 °C). Use Temperature / 10 as the source of
+        // truth and ignore HPT.
         try
         {
             var searcher = new ManagementObjectSearcher(
-                "SELECT Temperature, HighPrecisionTemperature FROM Win32_PerfFormattedData_Counters_ThermalZoneInformation");
+                "SELECT Temperature FROM Win32_PerfFormattedData_Counters_ThermalZoneInformation");
 
             using (var results = searcher.Get())
             {
                 foreach (var obj in results)
                 {
-                    if (obj["HighPrecisionTemperature"] is not null)
+                    if (obj["Temperature"] is not null)
                     {
-                        // HPT is in tenths of Kelvin: 3252 -> 325.2 K -> 52.0 °C
-                        // Use floating point so we don't truncate (3252-2731)/10 = 52
-                        // rather than integer division clipping to 52 anyway, but
-                        // the intent is (tenthsKelvin/10 - 273.1).
-                        var tenthsKelvin = Convert.ToDouble(obj["HighPrecisionTemperature"]);
-                        var celsius = (int)Math.Round(tenthsKelvin / 10.0 - 273.1);
+                        // tenths of Celsius -> Celsius
+                        var celsius = (int)Math.Round(Convert.ToDouble(obj["Temperature"]) / 10.0);
                         if (celsius is > 0 and < 120)
                         {
                             _lastTemperature = celsius;
