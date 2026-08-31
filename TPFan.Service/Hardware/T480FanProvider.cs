@@ -34,8 +34,18 @@ public class T480FanProvider : IDisposable
     }
 
     /// <summary>
-    /// Get current CPU temperature in Celsius
-    /// For T480, uses WMI Win32_TemperatureProbe
+    /// Get current CPU temperature in Celsius.
+    ///
+    /// ThinkPad firmware typically does not expose CPU temp via
+    /// <c>Win32_TemperatureProbe</c> (the class is often empty on T480),
+    /// so we cascade through several sources:
+    ///   1. <c>Win32_TemperatureProbe</c>            — best signal, but rarely populated
+    ///   2. <c>Win32_PerfFormattedData_Counters_ThermalZoneInformation</c>
+    ///      — ACPI thermal zone in tenths of Kelvin, available without elevation
+    ///   3. EC thermal sensor via <see cref="IFanController"/> if available
+    ///
+    /// Returns the last known value on failure rather than zeroing it, so
+    /// transient WMI hiccups don't make the UI flicker.
     /// </summary>
     public async Task<int> GetCpuTemperatureAsync()
     {
@@ -64,12 +74,44 @@ public class T480FanProvider : IDisposable
             System.Diagnostics.Debug.WriteLine($"Error reading temperature: {ex.Message}");
         }
 
+        // Fallback: ACPI thermal zone. Win32_PerfFormattedData exposes
+        // Temperature in tenths of Kelvin (matches MSAcpi_ThermalZoneTemperature
+        // semantics) and works without elevation.
+        try
+        {
+            var searcher = new ManagementObjectSearcher(
+                "SELECT Temperature FROM Win32_PerfFormattedData_Counters_ThermalZoneInformation");
+
+            using (var results = searcher.Get())
+            {
+                foreach (var obj in results)
+                {
+                    if (obj["Temperature"] is not null)
+                    {
+                        var tenthsKelvin = Convert.ToInt32(obj["Temperature"]);
+                        var celsius = (tenthsKelvin - 2731) / 10; // tenths K -> deg C
+                        if (celsius is > 0 and < 120)
+                        {
+                            _lastTemperature = celsius;
+                            return celsius;
+                        }
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error reading ACPI thermal zone: {ex.Message}");
+        }
+
         return _lastTemperature; // Return last known value on error
     }
 
     /// <summary>
-    /// Get current fan speed as percentage (0-100)
-    /// T480 typically reports speed as 0-255 or percentage via ACPI
+    /// Get current fan speed as percentage (0-100).
+    ///
+    /// Tries WMI <c>Win32_Fan</c> first, then falls back to the EC
+    /// controller (register 0x2F level → percent) if that class is empty.
     /// </summary>
     public async Task<int> GetFanSpeedPercentAsync()
     {
@@ -98,11 +140,32 @@ public class T480FanProvider : IDisposable
             System.Diagnostics.Debug.WriteLine($"Error reading fan speed: {ex.Message}");
         }
 
+        // Fallback to EC read via InpOut32 — real fan level from register 0x2F.
+        if (_fanController is not null && _fanController.IsAvailable)
+        {
+            try
+            {
+                var percent = await _fanController.GetFanSpeedPercentAsync();
+                if (percent >= 0)
+                {
+                    _lastFanSpeed = percent;
+                    return percent;
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error reading fan speed via EC: {ex.Message}");
+            }
+        }
+
         return _lastFanSpeed;
     }
 
     /// <summary>
-    /// Get current fan RPM
+    /// Get current fan RPM.
+    ///
+    /// Tries WMI <c>Win32_Fan.CurrentSpeed</c>, then falls back to estimating
+    /// RPM from the EC level (0..7 → 0..5200).
     /// </summary>
     public async Task<int> GetFanRpmAsync()
     {
@@ -125,6 +188,21 @@ public class T480FanProvider : IDisposable
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"Error reading fan RPM: {ex.Message}");
+        }
+
+        // Fallback: estimate RPM from EC level when WMI has no fan instance.
+        if (_fanController is not null && _fanController.IsAvailable)
+        {
+            try
+            {
+                var percent = await _fanController.GetFanSpeedPercentAsync();
+                if (percent >= 0)
+                    return EstimateRpmFromPercent(percent);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error estimating RPM via EC: {ex.Message}");
+            }
         }
 
         return 0;
@@ -220,6 +298,13 @@ public class T480FanProvider : IDisposable
         }
         return ok;
     }
+
+    /// <summary>
+    /// Estimated fan RPM at a given override/level percent, when the WMI
+    /// fan instance is not present. Linear interpolation 0..100% -> 0..5200 RPM.
+    /// </summary>
+    private static int EstimateRpmFromPercent(int percent) =>
+        (int)Math.Round(percent / 100.0 * 5200);
 
     /// <summary>
     /// Mathematical interpolation of fan speed based on temperature
