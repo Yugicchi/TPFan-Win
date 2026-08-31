@@ -16,9 +16,10 @@ class Program
 
         try
         {
-            // Wire up the EC fan controller. It self-reports availability: if
-            // inpoutx64.dll is missing or we are not elevated, IsAvailable
-            // is false and the service degrades gracefully to read-only mode.
+            var sensorService = new LibreHardwareMonitorSensorService();
+            Console.WriteLine(
+                $"Hardware sensors (LHM): {(sensorService.IsAvailable ? "AVAILABLE" : "unavailable — temperature/RPM/fan % will be 0")}");
+
             var fanController = new EcFanController();
             Console.WriteLine(
                 $"EC fan control: {(fanController.IsAvailable ? "AVAILABLE" : "unavailable")}");
@@ -30,7 +31,7 @@ class Program
                     "     is run as Administrator (and that inpoutx64.sys is installed).");
             }
 
-            using var fanProvider = new T480FanProvider(fanController);
+            using var fanProvider = new T480FanProvider(sensorService, fanController);
             using var pipeServer = new FanServicePipeServer(fanProvider);
 
             // Ctrl+C handler returns the fan to auto control so an abrupt
@@ -39,6 +40,7 @@ class Program
             {
                 e.Cancel = false;
                 fanProvider.ResetFanOverrideAsync().GetAwaiter().GetResult();
+                sensorService.Dispose();
                 Console.WriteLine("\nFan override released. Exiting.");
             };
 
