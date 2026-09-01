@@ -4,7 +4,6 @@
 
 1. **Visual Studio 2022** with:
    - .NET desktop development workload
-   - Windows App SDK (for UWP)
    - Windows 10/11 SDK
 
 2. **.NET 8.0 SDK**
@@ -40,20 +39,21 @@ dotnet build
 
 # Or build individually
 dotnet build TPFan.Shared
-dotnet build TPFan.Service
-dotnet build TPFan.UWP
+dotnet build TPFan.GUI
 ```
 
-### 4. Run Service (Console App)
+### 4. Run Application (Single-binary WPF app)
 
 ```bash
-cd TPFan.Service
-dotnet run
+cd TPFan.GUI
+dotnet run --configuration Release
 ```
 
 Expected output:
 ```
-TPFan-Win Service - Starting...
+TPFan-Win - Starting...
+EC fan control: AVAILABLE
+Hardware sensors: AVAILABLE
 Current temperature: 45°C
 Current fan speed: 35%
 Current fan RPM: 2850
@@ -65,12 +65,14 @@ Fan curve points detected: 6
   ...
 ```
 
-### 5. Run UWP App
+### 5. Run Published Single Binary
 
-Open `TPFan.sln` in Visual Studio:
-1. Set `TPFan.UWP` as startup project
-2. Select `x64` platform
-3. Press F5 to run
+Download or build the single-binary `TPFan.GUI.exe` (see [Release Process](RELEASE_PROCESS.md) or [Architecture Overview](ARCHITECTURE.md) for publish commands) and run:
+
+```bash
+TPFan.GUI.exe
+```
+**Note:** Administrator privileges are required for EC fan write operations. Without admin, the app starts in read-only mode (sensors still work, EC writes disabled).
 
 ## Git Commands for Version Control
 
@@ -110,37 +112,29 @@ git merge feature/fan-curve-detection
 - [ ] Detect actual fan curve from system
 - [ ] Test slider snapping
 
-### Phase 2: Service Integration
-- [ ] Implement named pipe IPC
-- [ ] Test UWP ↔ Service communication
-- [ ] Handle service not running gracefully
-
-### Phase 3: Fan Control
+### Phase 2: Fan Control
 - [ ] Research T480 ACPI methods
 - [ ] Implement fan override
 - [ ] Test stability & safety
 
-### Phase 4: System Tray
+### Phase 3: System Tray
 - [ ] Add tray icon
 - [ ] Implement minimize to tray
 - [ ] Add quick presets menu
 
-### Phase 5: MSIX Packaging
-- [ ] Configure package manifest
-- [ ] Test sideloading
-- [ ] Create installer
+### Phase 4: Documentation & Packaging
+- [ ] Update documentation for single-binary architecture
+- [ ] Test self-contained publish
+- [ ] Verify EC write requires administrator
 
 ## Troubleshooting
 
 ### WMI Access Denied
-Run Visual Studio/terminal as Administrator
+Run Visual Studio/terminal as Administrator.
 
-### UWP Build Errors
-- Ensure Windows App SDK is installed
+### Application Not Starting
+- Ensure .NET 8.0 SDK is installed
 - Check TargetFramework matches installed SDK
-
-### Service Not Starting
-Check if port/pipe name conflicts with other instances
 
 ### CPU temperature reads as `0` even though the fan is spinning
 
@@ -158,7 +152,7 @@ systeminfo | findstr /C:"Virtualization" /C:"hypervisor"
 Get-CimInstance Win32_DeviceGuard | Select-Object VirtualizationBasedSecurityStatus
 ```
 
-When that happens `TPFan.Service` automatically falls back to the ACPI
+When that happens `TPFan.GUI` automatically falls back to the ACPI
 thermal-zone counter, so you will see a non-zero temperature printed at
 startup:
 
@@ -169,12 +163,12 @@ Current temperature: 32°C
 ```
 
 The fan % and RPM however will read `0` because LHM also returns no fan
-sensors under VBS and the service does not guess. There are three
+sensors under VBS and the application does not guess. There are three
 workarounds, in order of safety:
 
 1. **Install Lenovo Vantage** (or the standalone "Lenovo System
    Interface Foundation" / "Energy Management" driver). This registers
-   the `root\WMI\Lenovo_Fan` (or `IdeaFan`) class which the service
+   the `root\WMI\Lenovo_Fan` (or `IdeaFan`) class which the application
    probes for fan % and RPM. CPU temperature stays on the ACPI
    fallback.
 2. **Disable Memory Integrity** under *Windows Security → Device
@@ -185,26 +179,42 @@ workarounds, in order of safety:
    elevated command prompt and reboot. This is the nuclear option.
 
 The fan *write* (override slider) is independent of the monitoring
-limitation: as long as the InpOut32 driver is installed and the service
-runs elevated, the override still works. See "EC Fan Control (T480)"
-below.
+limitation: as long as the InpOut32 driver is installed and the
+application runs elevated, the override still works. See "EC Fan Control
+(T480)" below.
 
 ## EC Fan Control (ThinkPad T480)
 
 > **Hardware only.** Without the InpOut32 driver and an elevated process, the
-> service falls back to read-only mode: WMI temperature / speed / RPM still
+> application falls back to read-only mode: WMI temperature / speed / RPM still
 > work, but the manual override slider does not move the fan.
 
 The override path is:
 ```
-UWP slider → Named Pipe → FanServicePipeServer.SetFanSpeedOverrideAsync
-            → T480FanProvider.SetFanSpeedOverrideAsync
-            → EcFanController.SetFanSpeedAsync
-            → InpOut32 (inpoutx64.dll + inpoutx64.sys)
-            → Embedded Controller port 0x62/0x66
-            → ThinkPad EC firmware
-            → fan PWM
+WPF Slider ── data binding ──► MainViewModel
+    │
+    │  (in-proc method call — no IPC)
+    ▼
+T480FanProvider.SetFanSpeedOverrideAsync(percent)
+    │
+    │  validate + record _isOverrideActive / _overridePercent
+    ▼
+IFanController  →  EcFanController.SetFanSpeedAsync(percent)
+    │
+    │  MapPercentToLevel(percent) ── using FanControlOptions.MaxLevel=7
+    ▼
+InpOut32 P/Invoke (Out32 / Inp32) via inpoutx64.dll + inpoutx64.sys
+    │
+    │  EC command port 0x66, data port 0x62 (ACPI EC protocol)
+    ▼
+EC offset 0x2F (level 0..7), 0x31 (engagement: 0x00=auto, 0x40=manual)
+    → fan spins at the requested level
 ```
+
+Read path (temperature/RPM) uses `LibreHardwareMonitorSensorService` (LHM
+with WMI/ACPI fallback). It does **not** depend on the InpOut32 driver —
+so the application runs in read-only mode when not elevated or when the
+driver is absent.
 
 ### 1. Obtain the InpOut32 driver
 
@@ -233,21 +243,27 @@ you are missing the matching `.sys` for your build. Some Lenovo BIOSes also
 block unsigned drivers — `inpoutx64.sys` from the official Highrez zip is
 EV-signed and should load without `bcdedit /set testsigning on`.
 
-### 3. Place the DLL beside the service executable
+### 3. Place the DLL beside the application executable
 
-Copy `inpoutx64.dll` into:
-```
-TPFan.Service/bin/x64/Release/net8.0-windows10.0.19041.0/
-```
-or, for the self-contained publish from CI, into the `native/` folder before
-publishing. `EcFanController.IsAvailable` returns `false` if the DLL cannot
-be found at startup; the service keeps running in read-only mode.
+For development, the DLL is already placed in `TPFan.GUI/native/` and will
+be copied to the output directory.
 
-### 4. Run the service as Administrator
+For the published single binary, `inpoutx64.dll` is bundled inside the
+exe and extracted to a temporary folder at runtime.
+
+`EcFanController.IsAvailable` returns `false` if the DLL cannot
+be found at startup; the application keeps running in read-only mode.
+
+### 4. Run the application as Administrator
 
 ```cmd
-cd TPFan.Service
+cd TPFan.GUI
 dotnet run --configuration Release
+```
+
+Or run the published binary:
+```cmd
+TPFan.GUI.exe
 ```
 
 You should see:
@@ -255,12 +271,12 @@ You should see:
 EC fan control: AVAILABLE
 ```
 
-If you see `EC fan control: unavailable`, the service still works for
+If you see `EC fan control: unavailable`, the application still works for
 monitoring — only the override slider is a no-op.
 
 ### 5. Verify on hardware
 
-With the service running and the UWP app open:
+With the application running and elevated:
 
 1. Drag the override slider to `80%`.
 2. The UI's `SpeedPercent` and `RPM` should jump within a second or two.
@@ -299,6 +315,13 @@ dotnet watch run
 # Run tests (when added)
 dotnet test
 
-# Pack as NuGet (if needed)
-dotnet pack
+# Publish single binary
+dotnet publish TPFan.GUI/TPFan.GUI.csproj \
+  --configuration Release --runtime win-x64 --self-contained true \
+  -p:PublishSingleFile=true \
+  -p:IncludeNativeLibrariesForSelfExtract=true \
+  -p:EnableCompressionInSingleFile=true \
+  --output ./publish/tpfan
+
+./publish/tpfan/TPFan.GUI.exe
 ```

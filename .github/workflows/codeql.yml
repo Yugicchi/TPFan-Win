@@ -40,9 +40,9 @@ jobs:
     - name: Build project
       run: |
         dotnet restore TPFan.Shared/TPFan.Shared.csproj
-        dotnet restore TPFan.Service/TPFan.Service.csproj
+        dotnet restore TPFan.GUI/TPFan.GUI.csproj
         dotnet build TPFan.Shared/TPFan.Shared.csproj --configuration Release --no-restore
-        dotnet build TPFan.Service/TPFan.Service.csproj --configuration Release --no-restore
+        dotnet build TPFan.GUI/TPFan.GUI.csproj --configuration Release --no-restore
 
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@v4
