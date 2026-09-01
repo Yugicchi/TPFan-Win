@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.3.0] - 2026-09-01
+
+### Added
+- Single-binary architecture: merged `TPFan.Service` into `TPFan.GUI` — one `TPFan.GUI.exe` (~77 MB self-contained) runs all service functionality (EC fan control, sensor polling, system tray) as background tasks in-process
+- No more Named Pipe IPC — `MainViewModel` calls `T480FanProvider` directly for fan status/override
+- `App.xaml.cs` initializes hardware services and starts system tray on its own STA thread in-process
+- `GlobalUsings.cs` resolves WinForms/WPF namespace ambiguities (`Brush`, `Color`, `ColorConverter`, `Point`, `Application`)
+
+### Changed
+- `EcFanController` / `LibreHardwareMonitorSensorService` / `T480FanProvider` / `SystemTrayManager` moved from `TPFan.Service` to `TPFan.GUI.Hardware` / `TPFan.GUI.UI`
+- `TPFan.Service` project removed entirely from solution and disk
+- `FanServiceClient`, `ServiceLauncher`, `IFanServiceContract` deleted (IPC layer removed)
+- CI workflow (`build.yml`) simplified to build/publish only `TPFan.GUI`
+- `inpoutx64.dll` bundled inside single-file binary via `IncludeNativeLibrariesForSelfExtract=true`
+
+### Fixed
+- EC write no longer fails due to elevation separation — GUI process itself runs elevated and writes directly
+- Fan auto-reset on exit via static `ProcessExit` / `CancelKeyPress` handlers in `App` and `SystemTrayManager`
+
+### Notes
+- UX: "buka GUI sudah termasuk buka service" — opening the GUI already includes the service functionality
+- Requires running as Administrator for EC writes; without admin, degrades gracefully to read-only monitoring
+
 ## [0.2.0] - 2026-08-31
 
 ### Added
