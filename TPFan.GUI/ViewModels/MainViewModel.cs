@@ -23,13 +23,18 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
     private int _selectedSpeedPercent;
     private bool _isOverrideEnabled;
     private bool _isLoading;
+    private readonly HysteresisOptions _hyst = new();
+    private float _lastTemp = float.MinValue;
+    private int _lastLevel = -1;
+    private int _changesThisMinute = 0;
+    private DateTime _minuteWindow = DateTime.MinValue;
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
     public MainViewModel(T480FanProvider? provider)
     {
         _provider = provider!;
-        _pollTimer = new DispatcherTimer(TimeSpan.FromSeconds(2), DispatcherPriority.Background, async (_, _) => await PollStatusAsync(), System.Windows.Application.Current.Dispatcher)
+        _pollTimer = new DispatcherTimer(TimeSpan.FromSeconds(2), DispatcherPriority.Normal, async (_, _) => await PollStatusAsync(), System.Windows.Application.Current.Dispatcher)
         {
             IsEnabled = true
         };
@@ -101,23 +106,35 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
 
     public async System.Threading.Tasks.Task InitializeAsync()
     {
+        System.Console.WriteLine($"[InitializeAsync] START provider={_provider != null}");
         IsLoading = true;
         try
         {
             if (_provider == null)
             {
+                System.Console.WriteLine("[InitializeAsync] SKIP: provider is null");
                 IsLoading = false;
                 return;
             }
 
-            try { _currentCurve = await _provider.DetectFanCurveAsync(); }
-            catch { /* best effort */ }
+            try
+            {
+                System.Console.WriteLine("[InitializeAsync] Detecting fan curve...");
+                _currentCurve = await _provider.DetectFanCurveAsync();
+                System.Console.WriteLine($"[InitializeAsync] Curve detected: {_currentCurve?.Points?.Length} points");
+            }
+            catch (Exception ex)
+            {
+                System.Console.WriteLine($"[InitializeAsync] DetectFanCurveAsync error: {ex.Message}");
+            }
 
+            System.Console.WriteLine("[InitializeAsync] Polling status...");
             await PollStatusAsync();
+            System.Console.WriteLine("[InitializeAsync] DONE");
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Init error: {ex.Message}");
+            System.Console.WriteLine($"[InitializeAsync] ERROR: {ex.Message}");
         }
         finally
         {
@@ -127,10 +144,40 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
 
     private async System.Threading.Tasks.Task PollStatusAsync()
     {
-        if (_provider == null || _disposed) return;
+        System.Console.WriteLine($"[PollStatusAsync] START provider={_provider != null}, disposed={_disposed}");
+        System.Diagnostics.Debug.WriteLine($"[PollStatusAsync] START provider={_provider != null}");
+        if (_provider == null || _disposed)
+        {
+            System.Console.WriteLine("[PollStatusAsync] SKIP: provider null or disposed");
+            return;
+        }
         try
         {
+            Diag.Log($"[Poll] START");
             var status = await _provider.GetFanStatusAsync();
+            Diag.Log($"[Poll] Temp={status.TemperatureCelsius:F1}°C RPM={status.Rpm} Speed={status.SpeedPercent}% Override={status.IsOverrideActive}");
+
+            // Hysteresis / anti-hunting: don't react to noise within deadband
+            if (Math.Abs(status.TemperatureCelsius - _lastTemp) < _hyst.DeadbandCelsius && _lastLevel >= 0)
+            {
+                Diag.Log($"[Hyst] Deadband active: {status.TemperatureCelsius:F1}°C within ±{_hyst.DeadbandCelsius}°C of {_lastTemp:F1}°C — skip level change");
+            }
+            else
+            {
+                _lastTemp = status.TemperatureCelsius;
+            }
+
+            // Rate limit changes (anti-hunting): max 3/min
+            if (DateTime.Now > _minuteWindow.AddMinutes(1))
+            {
+                _minuteWindow = DateTime.Now;
+                _changesThisMinute = 0;
+            }
+            if (_changesThisMinute >= _hyst.MaxChangesPerMinute)
+            {
+                Diag.Log($"[Hyst] Rate limit: {_changesThisMinute} changes/min reached — skip");
+            }
+            System.Console.WriteLine($"[PollStatusAsync] Status: Temp={status.TemperatureCelsius}, Speed={status.SpeedPercent}, RPM={status.Rpm}, Override={status.IsOverrideActive}");
             _currentStatus = status;
             OnPropertyChanged(nameof(TemperatureCelsius));
             OnPropertyChanged(nameof(SpeedPercent));
@@ -146,6 +193,7 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         }
         catch (Exception ex)
         {
+            System.Console.WriteLine($"[PollStatusAsync] ERROR: {ex.Message}");
             System.Diagnostics.Debug.WriteLine($"Poll error: {ex.Message}");
         }
     }

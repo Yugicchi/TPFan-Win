@@ -139,15 +139,6 @@
             </StackPanel>
         </Border>
 
-        <!-- Fan Curve Preview -->
-        <Border Grid.Row="3" Background="{StaticResource SurfaceBrush}" CornerRadius="12" Padding="16" Margin="0,0,0,16">
-            <StackPanel>
-                <TextBlock Text="Fan Curve" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,12"/>
-                <Canvas x:Name="CurveCanvas" Height="120" Background="Transparent"
-                        SizeChanged="CurveCanvas_SizeChanged"/>
-            </StackPanel>
-        </Border>
-
         <!-- Connection Status -->
         <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,20,0,0">
             <Ellipse Width="10" Height="10" Fill="{Binding ConnectionColorBrush}" Margin="0,0,8,0"/>

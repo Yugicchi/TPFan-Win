@@ -73,11 +73,8 @@ public class EcFanController : IFanController
     {
         try
         {
-            // For single-file apps Environment.ProcessPath gives the real exe path.
-            // AppContext.BaseDirectory is the extraction folder (same dir as .exe).
             var baseDir = AppContext.BaseDirectory;
             var exeDir = Path.GetDirectoryName(Environment.ProcessPath ?? string.Empty) ?? string.Empty;
-
             var candidates = new[]
             {
                 Path.Combine(baseDir, $"{InpOutDll}.dll"),
@@ -88,13 +85,19 @@ public class EcFanController : IFanController
             };
             foreach (var path in candidates)
             {
+                Diag.Log($"[EC] Checking DLL: {path} -> exists={File.Exists(path)}");
                 if (File.Exists(path) && NativeLibrary.TryLoad(path, out _))
+                {
+                    Diag.Log($"[EC] DLL loaded successfully: {path}");
                     return true;
+                }
             }
+            Diag.Log($"[EC] No {InpOutDll}.dll found in any search path — fan override will not work.");
             return false;
         }
-        catch
+        catch (Exception ex)
         {
+            Diag.Log($"[EC] DetectInpOutDll exception: {ex.Message}");
             return false;
         }
     }
@@ -103,7 +106,7 @@ public class EcFanController : IFanController
 
     public async Task<bool> SetFanSpeedAsync(int percent)
     {
-        if (!IsAvailable) { Console.WriteLine("[EC] SetFanSpeedAsync: NOT AVAILABLE (dll or not elevated)"); return false; }
+        if (!IsAvailable) { Diag.Log("[EC] SetFanSpeedAsync: NOT AVAILABLE (dll or not elevated)"); return false; }
         if (percent < 0 || percent > 100)
         { Console.WriteLine($"[EC] SetFanSpeedAsync: ignoring out-of-range percent={percent}"); return false; }
 
@@ -167,7 +170,8 @@ public class EcFanController : IFanController
             {
                 var raw = EcRead(_options.ReadRegister);
                 var pct = MapLevelToPercent(raw);
-                Debug.WriteLine($"[EC] GetFanSpeedPercentAsync raw=0x{raw:X2} -> {pct}%");
+                if (pct > 100) pct = 100; // mirror register bug guard
+                Diag.Log($"[EC] GetFanSpeedPercentAsync raw=0x{raw:X2} -> {pct}%");
                 return pct;
             }).ConfigureAwait(false);
         }

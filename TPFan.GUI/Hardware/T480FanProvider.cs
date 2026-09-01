@@ -59,11 +59,14 @@ public class T480FanProvider : IDisposable
             _lastFanSpeed = (int)Math.Round(v);
             return _lastFanSpeed;
         }
-        // Fallback 1: EC readback (less accurate but better than 0)
-        if (_fanController is not null)
+        // Fallback 1: EC readback ONLY if manual override is active.
+        // In auto mode the mirror register at 0x2F is unreliable (echoes
+        // 0x00/0x80/0xFF depending on timing) and can produce bogus values
+        // like >1000%. Skip this fallback when the firmware controls fan.
+        if (_isOverrideActive && _fanController is not null)
         {
             var ec = await _fanController.GetFanSpeedPercentAsync();
-            if (ec >= 0) return ec;
+            if (ec >= 0 && ec <= 100) return ec;
         }
         // Fallback 2: active override value
         return _isOverrideActive ? _lastFanSpeed : 0;

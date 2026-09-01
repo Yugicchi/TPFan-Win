@@ -55,14 +55,18 @@ public sealed class LibreHardwareMonitorSensorService : IDisposable
             .SelectMany(h => h.Sensors)
             .Where(s => s.SensorType == SensorType.Temperature)
             .ToList();
-        Debug.WriteLine($"LHM temps (cpu): {temps.Count} sensors: {string.Join(", ", temps.Select(s => $"{s.Name}={s.Value}"))}");
+        Diag.Log($"[LHM] CPU temps: {temps.Count} sensors: {string.Join(", ", temps.Select(s => $"{s.Name}={s.Value}"))}");
 
         var withValue = temps.Where(s => s.Value is not null).ToList();
         // Prefer "Core Max / Package / CPU Package" over individual cores
         var preferred = withValue.FirstOrDefault(s =>
             s.Name is "Core Max" or "CPU Package" or "Package");
         var lhm = (preferred ?? withValue.FirstOrDefault())?.Value;
-        if (lhm is not null) return lhm;
+        if (lhm is not null)
+        {
+            Diag.Log($"[LHM] Using LHM sensor: {preferred?.Name ?? withValue.FirstOrDefault()?.Name ?? "unknown"} = {lhm:0.0}°C");
+            return lhm;
+        }
 
         // VBS / Hyper-V blocks the MSR reads that LHM relies on for Intel CPU
         // temps, so on those machines every LHM CPU temperature sensor is null.
@@ -74,11 +78,13 @@ public sealed class LibreHardwareMonitorSensorService : IDisposable
         var ac = ReadAcpiThermalZoneCelsius();
         if (ac is not null)
         {
-            Console.WriteLine(
-                "LHM CPU temperatures are empty (likely VBS / Hyper-V blocking MSR) — " +
-                "falling back to ACPI thermal-zone counter for CPU temperature.");
+            Diag.Log(
+                "[LHM] CPU temperatures empty (likely VBS / Hyper-V blocking MSR) — " +
+                $"falling back to ACPI thermal-zone: {ac:0.0}°C.");
+            return ac;
         }
-        return ac;
+        Diag.Log("[LHM] ACPI thermal zone also returned null — no temperature source available.");
+        return null;
     }
 
     /// <summary>
@@ -166,7 +172,7 @@ public sealed class LibreHardwareMonitorSensorService : IDisposable
                 .SelectMany(h => h.Sensors)
                 .Where(s => s.SensorType == SensorType.Control)
                 .ToList();
-            Debug.WriteLine($"LHM controls: {controls.Count} sensors: {string.Join(", ", controls.Select(s => $"{s.Name}={s.Value}"))}");
+            Diag.Log($"[LHM] Controls: {controls.Count} sensors: {string.Join(", ", controls.Select(s => $"{s.Name}={s.Value}"))}");
             var withValue = controls.Where(s => s.Value is not null).ToList();
             var best = withValue.FirstOrDefault(s =>
                 s.Name.Contains("Fan", StringComparison.OrdinalIgnoreCase))
@@ -192,7 +198,7 @@ public sealed class LibreHardwareMonitorSensorService : IDisposable
                 .SelectMany(h => h.Sensors)
                 .Where(s => s.SensorType == SensorType.Fan)
                 .ToList();
-            Debug.WriteLine($"LHM fans: {fans.Count} sensors: {string.Join(", ", fans.Select(s => $"{s.Name}={s.Value}"))}");
+            Diag.Log($"[LHM] Fans: {fans.Count} sensors: {string.Join(", ", fans.Select(s => $"{s.Name}={s.Value}"))}");
             var withValue = fans.Where(s => s.Value is not null).ToList();
             var best = withValue.FirstOrDefault(s =>
                 s.Name.Contains("Fan", StringComparison.OrdinalIgnoreCase))
@@ -302,14 +308,11 @@ public sealed class LibreHardwareMonitorSensorService : IDisposable
     {
         var prefix = new string(' ', indent * 2);
         var msg = $"{prefix}HW: {hw.HardwareType} {hw.Name} (identifier={hw.Identifier})";
-        Debug.WriteLine(msg);
-        // Write to stdout as well so `dotnet run --configuration Release` exposes it
-        Console.WriteLine(msg);
+        Diag.Log(msg);
         foreach (var s in hw.Sensors)
         {
             var sensorMsg = $"{prefix}  SENSOR: {s.SensorType} {s.Name} = {s.Value}";
-            Debug.WriteLine(sensorMsg);
-            Console.WriteLine(sensorMsg);
+            Diag.Log(sensorMsg);
         }
     }
 
