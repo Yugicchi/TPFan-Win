@@ -74,8 +74,8 @@ FindClosestSnapPoint(value):
 Ketika user mengaktifkan manual override:
 
 1. **Slider value di-snap** ke snap point terdekat dari curve
-2. **Value dikirim ke service** via Named Pipe IPC (`FanServicePipeServer.SetFanSpeedOverrideAsync`)
-3. **Service apply override** via `T480FanProvider.SetFanSpeedOverrideAsync` → `EcFanController.SetFanSpeedAsync` → InpOut32 (`Out32`) → EC port 0x62/0x66 → register `0x2F` (level 0..7); `0x31` dialihkan ke manual mode (`0x40`).
+2. **Value dikirim ke hardware layer** via direct in-proc call (`MainViewModel` → `T480FanProvider.SetFanSpeedOverrideAsync`)
+3. **Hardware layer apply override** via `T480FanProvider.SetFanSpeedOverrideAsync` → `EcFanController.SetFanSpeedAsync` → InpOut32 (`Out32`) → EC port 0x62/0x66 → register `0x2F` (level 0..7); `0x31` dialihkan ke manual mode (`0x40`).
 4. **Sistem reports** speed sesuai override; `FanStatus.IsOverrideActive = true` dan `OverrideSpeedPercent` merefleksikan target. Toggle off memanggil `ResetFanOverrideAsync` → `0x32`=0x00 + `0x31`=0x00 (kembalikan auto).
 
 Tanpa driver InpOut32 atau tanpa Administrator, override adalah no-op (returns `false`) dan UI tetap di read-only mode. Lihat SETUP.md bagian "EC Fan Control (T480)".
