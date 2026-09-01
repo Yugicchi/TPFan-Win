@@ -58,9 +58,11 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         get => _selectedSpeedPercent;
         set
         {
-            _selectedSpeedPercent = value;
+            // Snap to closest fan curve point
+            var snapped = _currentCurve?.FindClosestSnapPoint(value) ?? value;
+            if (_selectedSpeedPercent == snapped) return;
+            _selectedSpeedPercent = snapped;
             OnPropertyChanged();
-            // Apply immediately if override is active
             if (_isOverrideEnabled) { _ = ApplyOverrideAsync(); }
         }
     }
@@ -140,6 +142,7 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
             OnPropertyChanged(nameof(ModeColorBrush));
             OnPropertyChanged(nameof(ConnectionColorBrush));
             OnPropertyChanged(nameof(ConnectionStatus));
+            OnPropertyChanged(nameof(FanCurve)); // trigger canvas redraw
         }
         catch (Exception ex)
         {

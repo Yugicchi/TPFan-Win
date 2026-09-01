@@ -1,6 +1,7 @@
 <Application x:Class="TPFan.GUI.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:converters="clr-namespace:System.Windows;assembly=PresentationFramework">
     <Application.Resources>
         <ResourceDictionary>
             <!-- Cool blue theme -->
@@ -9,6 +10,8 @@
             <SolidColorBrush x:Key="SurfaceBrush" Color="#2D2D2D"/>
             <SolidColorBrush x:Key="TextBrush" Color="#FFFFFF"/>
             <SolidColorBrush x:Key="SubtleBrush" Color="#AAAAAA"/>
+            <!-- Value converters -->
+            <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
         </ResourceDictionary>
     </Application.Resources>
 </Application>

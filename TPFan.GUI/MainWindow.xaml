@@ -63,20 +63,78 @@
         <!-- Override Slider -->
         <Border Grid.Row="2" Background="{StaticResource SurfaceBrush}" CornerRadius="12" Padding="20" Margin="0,0,0,16">
             <StackPanel>
-                <StackPanel Orientation="Horizontal">
-                    <TextBlock Text="Manual Override" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                    <ToggleButton Content="Enable" IsChecked="{Binding IsOverrideEnabled, Mode=TwoWay}"
-                                  Margin="12,0,0,0" Padding="16,4" Background="{StaticResource AccentBrush}"
-                                  Foreground="White" BorderThickness="0" FontWeight="Medium"/>
-                </StackPanel>
-                <Slider Value="{Binding SelectedSpeedPercent, Mode=TwoWay}" Minimum="0" Maximum="100"
-                        TickFrequency="20" IsSnapToTickEnabled="True"
-                        IsEnabled="{Binding IsOverrideEnabled}"
-                        Margin="0,16,0,0" Height="32"/>
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,8,0,0">
-                    <TextBlock Text="0%" FontSize="12" Foreground="{StaticResource SubtleBrush}"/>
-                    <TextBlock Text="50%" FontSize="12" Foreground="{StaticResource SubtleBrush}" Margin="72,0"/>
-                    <TextBlock Text="100%" FontSize="12" Foreground="{StaticResource SubtleBrush}" Margin="72,0,0,0"/>
+                <!-- Mode Toggle -->
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0">
+                        <TextBlock Text="Fan Control" FontSize="16" FontWeight="SemiBold"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                            <TextBlock Text="Current: " FontSize="13" Foreground="{StaticResource SubtleBrush}"/>
+                            <TextBlock Text="{Binding ModeDisplay}" FontSize="13" FontWeight="SemiBold"
+                                       Foreground="{Binding ModeColorBrush}"/>
+                        </StackPanel>
+                    </StackPanel>
+                    <ToggleButton Grid.Column="1"
+                                  IsChecked="{Binding IsOverrideEnabled, Mode=TwoWay}"
+                                  Width="60" Height="30"
+                                  VerticalAlignment="Center">
+                        <ToggleButton.Template>
+                            <ControlTemplate TargetType="ToggleButton">
+                                <Grid>
+                                    <Border x:Name="bg" Background="#333" CornerRadius="15" Width="60" Height="30"/>
+                                    <Ellipse x:Name="dot" Width="22" Height="22" Fill="White"
+                                             HorizontalAlignment="Left" Margin="4,0,0,0">
+                                        <Ellipse.RenderTransform>
+                                            <TranslateTransform x:Name="dotTransform"/>
+                                        </Ellipse.RenderTransform>
+                                    </Ellipse>
+                                    <TextBlock x:Name="label" Text="A" Foreground="White" FontSize="11"
+                                               FontWeight="Bold" HorizontalAlignment="Right"
+                                               VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                </Grid>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsChecked" Value="True">
+                                        <Setter TargetName="bg" Property="Background" Value="#0078D4"/>
+                                        <Setter TargetName="label" Property="Text" Value="M"/>
+                                        <Trigger.EnterActions>
+                                            <BeginStoryboard>
+                                                <Storyboard>
+                                                    <DoubleAnimation Storyboard.TargetName="dotTransform"
+                                                        Storyboard.TargetProperty="X" To="28" Duration="0:0:0.15"/>
+                                                </Storyboard>
+                                            </BeginStoryboard>
+                                        </Trigger.EnterActions>
+                                        <Trigger.ExitActions>
+                                            <BeginStoryboard>
+                                                <Storyboard>
+                                                    <DoubleAnimation Storyboard.TargetName="dotTransform"
+                                                        Storyboard.TargetProperty="X" To="0" Duration="0:0:0.15"/>
+                                                </Storyboard>
+                                            </BeginStoryboard>
+                                        </Trigger.ExitActions>
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </ToggleButton.Template>
+                    </ToggleButton>
+                </Grid>
+
+                <!-- Speed Slider (shown only when override is active) -->
+                <StackPanel Visibility="{Binding IsOverrideEnabled, Converter={StaticResource BoolToVisibilityConverter}}"
+                            Margin="0,16,0,0">
+                    <TextBlock Text="{Binding SelectedSpeedPercent, StringFormat={}{0}%}"
+                               FontSize="28" FontWeight="Bold" HorizontalAlignment="Center"
+                               Foreground="{StaticResource AccentBrush}"/>
+                    <Slider Value="{Binding SelectedSpeedPercent, Mode=TwoWay}"
+                            Minimum="0" Maximum="100" Margin="0,8,0,0" Height="32"/>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,4,0,0">
+                        <TextBlock Text="0%" FontSize="11" Foreground="{StaticResource SubtleBrush}"/>
+                        <TextBlock Text="50%" FontSize="11" Foreground="{StaticResource SubtleBrush}" Margin="72,0"/>
+                        <TextBlock Text="100%" FontSize="11" Foreground="{StaticResource SubtleBrush}" Margin="72,0,0,0"/>
+                    </StackPanel>
                 </StackPanel>
             </StackPanel>
         </Border>

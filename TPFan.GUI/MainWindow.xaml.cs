@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -16,7 +17,16 @@ public partial class MainWindow : Window
         var provider = App.CurrentProvider;
         _vm = new MainViewModel(provider);
         DataContext = _vm;
-        Loaded += async (_, _) => await _vm.InitializeAsync();
+        _vm.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(MainViewModel.FanCurve))
+                DrawCurve(CurveCanvas);
+        };
+        Loaded += async (_, _) =>
+        {
+            await _vm.InitializeAsync();
+            DrawCurve(CurveCanvas); // initial draw after data loads
+        };
         Closed += (_, _) => _vm.Dispose();
     }
 

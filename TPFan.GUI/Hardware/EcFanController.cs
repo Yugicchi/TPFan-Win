@@ -86,7 +86,12 @@ public class EcFanController : IFanController
                 Path.Combine(exeDir, "native", $"{InpOutDll}.dll"),
                 Path.Combine(Environment.SystemDirectory, $"{InpOutDll}.dll"),
             };
-            return candidates.Any(File.Exists);
+            foreach (var path in candidates)
+            {
+                if (File.Exists(path) && NativeLibrary.TryLoad(path, out _))
+                    return true;
+            }
+            return false;
         }
         catch
         {

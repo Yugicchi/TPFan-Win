@@ -59,6 +59,13 @@ public class T480FanProvider : IDisposable
             _lastFanSpeed = (int)Math.Round(v);
             return _lastFanSpeed;
         }
+        // Fallback 1: EC readback (less accurate but better than 0)
+        if (_fanController is not null)
+        {
+            var ec = await _fanController.GetFanSpeedPercentAsync();
+            if (ec >= 0) return ec;
+        }
+        // Fallback 2: active override value
         return _isOverrideActive ? _lastFanSpeed : 0;
     }
 
