@@ -82,12 +82,12 @@ dotnet publish TPFan.GUI/TPFan.GUI.csproj \
 
 - [Architecture Overview](ARCHITECTURE.md) — components, data flow, EC
   override path, single-binary distribution
-- [Setup Guide](SETUP.md) — driver install, EC register map, hardware
+- [Setup Guide](docs/SETUP.md) — driver install, EC register map, hardware
   verification
-- [Fan Curve Model](FAN_CURVE_MODEL.md) — how the temperature→speed
+- [Fan Curve Model](docs/FAN_CURVE_MODEL.md) — how the temperature→speed
   curve is detected and used
 - [Changelog](CHANGELOG.md) — release notes
-- [Release Process](RELEASE_PROCESS.md) — how to cut a release
+- [Release Process](docs/RELEASE_PROCESS.md) — how to cut a release
 
 ## Project Structure
 

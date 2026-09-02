@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.4.0] - 2026-09-02
+
+### Added
+- EC dirty-shutdown mitigation (hysteresis + safe shutdown sequence)
+- Hysteresis tuning: temperature 1°C / time 1 s / minimum 5 per 5 min
+- System tray restore on startup (reconnects after process restart)
+- Visual revisions: 3-row grid layout, divider, radio-corner styling, slider ZIndex 10
+- Fan curve verification (6 points: [20, 30, 40, 60, 80, 100]%)
+- Documentation moved to `docs/` (
+`SETUP.md`, `FAN_CURVE_MODEL.md`, `RELEASE_PROCESS.md`)
+- Known bugs tracked via GitHub issue (see `docs/README.md`)
+
+### Changed
+- `TPFan.GUI.csproj` / `TPFan.Shared.csproj` version updated to `0.4.0`
+- Project build properties aligned with single-binary distribution (`SelfContained=true`, `PublishSingleFile=true`)
+
+### Fixed
+- `DetectFanCurveAsync` verified
+- `ResetFanOnExit` on exit
+- Single-binary publish (174 MB self-contained with `inpoutx64.dll` bundled)
+
 ## [0.3.0] - 2026-09-01
 
 ### Added
@@ -57,4 +78,3 @@
 ### Next
 - Test EC write end-to-end on actual T480 hardware
 - Add system tray integration
-[0.4.0] - 2026-09-02: EC dirty-shutdown mitigation, hysteresis tuning (1/1/5), systray restore, visual revisions, fan curve verify (6 pts); docs moved to docs/; known bugs tracked in GitHub issue.

@@ -307,7 +307,7 @@
                 BorderBrush="{StaticResource BorderBrush}"
                 BorderThickness="0,1,0,0">
             <Grid Margin="32,0">
-                <TextBlock Text="v0.3.0" VerticalAlignment="Center" FontSize="14" Foreground="{StaticResource MutedText}"/>
+                <TextBlock Text="v0.4.0" VerticalAlignment="Center" FontSize="14" Foreground="{StaticResource MutedText}"/>
                 <Button Content="Minimize to tray"
                         HorizontalAlignment="Right"
                         VerticalAlignment="Center"

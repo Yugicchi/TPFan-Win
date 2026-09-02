@@ -31,15 +31,14 @@ chore: update NuGet packages
 ## CI/CD
 
 ### Workflows
-- build.yml - Builds all projects on every push/PR
-- msix-packaging.yml - Creates MSIX package on main branch pushes
+- build.yml - Builds and publishes the single-binary `TPFan.GUI.exe` on every push/PR
 - codeql.yml - Security analysis (weekly + on push)
 - pr-check.yml - Validates PR title format
 - stale.yml - Auto-closes inactive issues/PRs
 
 All builds run on GitHub Actions so you don't need to build locally on T480.
 
-See [CI_CD.md](../CI_CD.md) for details.
+See [Release Process](docs/RELEASE_PROCESS.md) for release workflow details.
 
 ## Code Standards
 

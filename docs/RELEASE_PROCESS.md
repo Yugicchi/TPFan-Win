@@ -15,13 +15,14 @@ Examples:
 - `v0.1.0` - Initial skeleton
 - `v0.2.0` - EC fan control write implemented
 - `v0.3.0` - Single-binary architecture (merged service into GUI)
+- `v0.4.0` - EC dirty-shutdown mitigation, hysteresis, visual revisions
 - `v1.0.0` - First stable release
 
 ## Pre-release Versions
 
-- `v0.3.0-alpha.1` - Early testing
-- `v0.3.0-beta.1` - Feature complete
-- `v0.3.0-rc.1` - Release candidate
+- `v0.4.0-alpha.1` - Early testing
+- `v0.4.0-beta.1` - Feature complete
+- `v0.4.0-rc.1` - Release candidate
 
 ## Release Checklist
 
@@ -39,8 +40,8 @@ Examples:
 - [ ] Merge to `main`
 
 ### Create Release
-- [ ] Create git tag: `git tag v0.3.0`
-- [ ] Push tag: `git push origin v0.3.0`
+- [ ] Create git tag: `git tag v0.4.0`
+- [ ] Push tag: `git push origin v0.4.0`
 - [ ] Wait for GitHub Actions to complete
 - [ ] Verify artifacts uploaded
 - [ ] Edit release notes (auto-generated)
@@ -73,13 +74,13 @@ For critical bugs in production:
 
 1. Create branch from tag:
    ```bash
-   git checkout v0.3.0
-   git checkout -b hotfix/v0.3.1
+   git checkout v0.4.0
+   git checkout -b hotfix/v0.4.1
    ```
 
 2. Fix the bug
 
-3. Update version to `v0.3.1` in:
+3. Update version to `v0.4.1` in:
    - `TPFan.GUI/TPFan.GUI.csproj`
    - `TPFan.Shared/TPFan.Shared.csproj`
 
@@ -96,7 +97,7 @@ If release has critical issues:
 3. Click "Delete" (keeps tag)
 4. Delete the tag:
    ```bash
-   git push --delete origin v0.3.0
+   git push --delete origin v0.4.0
    ```
 
 5. Fix issue and re-release

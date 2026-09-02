@@ -177,7 +177,7 @@ dotnet publish TPFan.GUI/TPFan.GUI.csproj \
   -p:EnableCompressionInSingleFile=true
 ```
 
-Produces one `TPFan.GUI.exe` (~77 MB) that bundles:
+Produces one `TPFan.GUI.exe` (~174 MB self-contained) that bundles:
 
 - The WPF UI
 - `LibreHardwareMonitorLib` + sensor service
