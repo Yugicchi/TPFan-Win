@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Media;
@@ -20,9 +22,9 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         TemperatureCelsius = 0, Rpm = 0, SpeedPercent = 0, IsOverrideActive = false
     };
     private FanCurve? _currentCurve;
-    private int _selectedSpeedPercent;
-    private bool _isOverrideEnabled;
+    private bool _isManual;
     private bool _isLoading;
+    private int _selectedSpeedPercent;
     private readonly HysteresisOptions _hyst = new();
     private float _lastTemp = float.MinValue;
     private int _lastLevel = -1;
@@ -31,13 +33,49 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
+    public System.Windows.Input.ICommand ResetFanOverrideCommand { get; }
+    public System.Windows.Input.ICommand ApplyFanOverrideCommand { get; }
+    public System.Windows.Input.ICommand MinimizeToTrayCommand { get; }
+
     public MainViewModel(T480FanProvider? provider)
     {
         _provider = provider!;
-        _pollTimer = new DispatcherTimer(TimeSpan.FromSeconds(2), DispatcherPriority.Normal, async (_, _) => await PollStatusAsync(), System.Windows.Application.Current.Dispatcher)
+        ResetFanOverrideCommand = new RelayCommand(async () => await ResetOverrideAsync());
+        ApplyFanOverrideCommand = new RelayCommand(async () => await ApplyOverrideAsync());
+        MinimizeToTrayCommand = new RelayCommand(() =>
+        {
+            if (Window != null) Window.Hide();
+        });
+
+        _pollTimer = new DispatcherTimer(
+            TimeSpan.FromSeconds(2),
+            DispatcherPriority.Normal,
+            async (_, _) => await PollStatusAsync(),
+            System.Windows.Application.Current.Dispatcher)
         {
             IsEnabled = true
         };
+    }
+
+    public Window? Window { get; set; }
+
+    // Single source of truth: false=Auto, true=Manual
+    public bool IsManual
+    {
+        get => _isManual;
+        set
+        {
+            if (_isManual == value) return;
+            _isManual = value;
+            OnPropertyChanged();
+            if (value) { _ = ApplyOverrideAsync(); } else { _ = ResetOverrideAsync(); }
+        }
+    }
+
+    public bool IsOverrideEnabled
+    {
+        get => _isManual;
+        set { IsManual = value; }
     }
 
     public int TemperatureCelsius => (int)Math.Round((double)_currentStatus.TemperatureCelsius);
@@ -46,29 +84,23 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
 
     public int Rpm => _currentStatus.Rpm;
 
-    public bool IsOverrideEnabled
-    {
-        get => _isOverrideEnabled;
-        set
-        {
-            if (_isOverrideEnabled == value) return;
-            _isOverrideEnabled = value;
-            OnPropertyChanged();
-            if (value) { _ = ApplyOverrideAsync(); } else { _ = ResetOverrideAsync(); }
-        }
-    }
+    public int[] FanCurveSnapPoints => _currentCurve?.Points
+        ?.Select(p => p.SpeedPercent)
+        .Distinct()
+        .OrderBy(s => s)
+        .ToArray() ?? new[] { 0, 25, 50, 75, 100 };
 
     public int SelectedSpeedPercent
     {
         get => _selectedSpeedPercent;
         set
         {
-            // Snap to closest fan curve point
+            // Snap to closest fan curve point; always apply snap even when value unchanged
+            // to prevent stale 30% from systray overriding slider
             var snapped = _currentCurve?.FindClosestSnapPoint(value) ?? value;
-            if (_selectedSpeedPercent == snapped) return;
             _selectedSpeedPercent = snapped;
             OnPropertyChanged();
-            if (_isOverrideEnabled) { _ = ApplyOverrideAsync(); }
+            if (_isManual) { _ = ApplyOverrideAsync(); }
         }
     }
 
@@ -84,7 +116,7 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
 
     public string ModeDisplay => _currentStatus.IsOverrideActive ? "Manual" : "Auto";
 
-    public System.Windows.Media.Brush TemperatureColorBrush => TemperatureCelsius switch
+    public Brush TemperatureColorBrush => TemperatureCelsius switch
     {
         <= 45 => new SolidColorBrush((Color)ColorConverter.ConvertFromString("#4CD964")),
         <= 65 => new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FFCC00")),
@@ -92,11 +124,11 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         _ => new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FF3B30"))
     };
 
-    public System.Windows.Media.Brush ModeColorBrush => _currentStatus.IsOverrideActive
+    public Brush ModeColorBrush => _currentStatus.IsOverrideActive
         ? new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FF9500"))
         : new SolidColorBrush((Color)ColorConverter.ConvertFromString("#4CD964"));
 
-    public System.Windows.Media.Brush ConnectionColorBrush => _provider != null
+    public Brush ConnectionColorBrush => _provider != null
         ? new SolidColorBrush((Color)ColorConverter.ConvertFromString("#4CD964"))
         : new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FF3B30"));
 
@@ -104,37 +136,37 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
 
     public FanCurve? FanCurve => _currentCurve;
 
-    public async System.Threading.Tasks.Task InitializeAsync()
+    public async Task InitializeAsync()
     {
-        System.Console.WriteLine($"[InitializeAsync] START provider={_provider != null}");
+        Diag.Log($"[Init] START provider={_provider != null}");
         IsLoading = true;
+        IsManual = false;
         try
         {
             if (_provider == null)
             {
-                System.Console.WriteLine("[InitializeAsync] SKIP: provider is null");
-                IsLoading = false;
+                Diag.Log("[Init] SKIP: provider is null");
                 return;
             }
 
             try
             {
-                System.Console.WriteLine("[InitializeAsync] Detecting fan curve...");
+                Diag.Log("[Init] Detecting fan curve...");
                 _currentCurve = await _provider.DetectFanCurveAsync();
-                System.Console.WriteLine($"[InitializeAsync] Curve detected: {_currentCurve?.Points?.Length} points");
+                Diag.Log($"[Init] Curve detected: {_currentCurve?.Points?.Length} points, snap points: [{string.Join(", ", FanCurveSnapPoints)}]");
             }
             catch (Exception ex)
             {
-                System.Console.WriteLine($"[InitializeAsync] DetectFanCurveAsync error: {ex.Message}");
+                Diag.Log($"[Init] DetectFanCurveAsync error: {ex.Message}");
             }
 
-            System.Console.WriteLine("[InitializeAsync] Polling status...");
+            Diag.Log("[Init] Polling status...");
             await PollStatusAsync();
-            System.Console.WriteLine("[InitializeAsync] DONE");
+            Diag.Log("[Init] DONE");
         }
         catch (Exception ex)
         {
-            System.Console.WriteLine($"[InitializeAsync] ERROR: {ex.Message}");
+            Diag.Log($"[Init] ERROR: {ex.Message}");
         }
         finally
         {
@@ -142,22 +174,19 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         }
     }
 
-    private async System.Threading.Tasks.Task PollStatusAsync()
+    private async Task PollStatusAsync()
     {
-        System.Console.WriteLine($"[PollStatusAsync] START provider={_provider != null}, disposed={_disposed}");
-        System.Diagnostics.Debug.WriteLine($"[PollStatusAsync] START provider={_provider != null}");
+        Diag.Log($"[Poll] START provider={_provider != null}, disposed={_disposed}");
         if (_provider == null || _disposed)
         {
-            System.Console.WriteLine("[PollStatusAsync] SKIP: provider null or disposed");
+            Diag.Log("[Poll] SKIP: provider null or disposed");
             return;
         }
         try
         {
-            Diag.Log($"[Poll] START");
             var status = await _provider.GetFanStatusAsync();
             Diag.Log($"[Poll] Temp={status.TemperatureCelsius:F1}°C RPM={status.Rpm} Speed={status.SpeedPercent}% Override={status.IsOverrideActive}");
 
-            // Hysteresis / anti-hunting: don't react to noise within deadband
             if (Math.Abs(status.TemperatureCelsius - _lastTemp) < _hyst.DeadbandCelsius && _lastLevel >= 0)
             {
                 Diag.Log($"[Hyst] Deadband active: {status.TemperatureCelsius:F1}°C within ±{_hyst.DeadbandCelsius}°C of {_lastTemp:F1}°C — skip level change");
@@ -167,7 +196,6 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
                 _lastTemp = status.TemperatureCelsius;
             }
 
-            // Rate limit changes (anti-hunting): max 3/min
             if (DateTime.Now > _minuteWindow.AddMinutes(1))
             {
                 _minuteWindow = DateTime.Now;
@@ -177,8 +205,18 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
             {
                 Diag.Log($"[Hyst] Rate limit: {_changesThisMinute} changes/min reached — skip");
             }
-            System.Console.WriteLine($"[PollStatusAsync] Status: Temp={status.TemperatureCelsius}, Speed={status.SpeedPercent}, RPM={status.Rpm}, Override={status.IsOverrideActive}");
+
             _currentStatus = status;
+            // Sync slider to override value when manual mode active — force even if same to clear stale snap
+            if (status.IsOverrideActive)
+            {
+                var target = _currentCurve?.FindClosestSnapPoint(status.SpeedPercent) ?? status.SpeedPercent;
+                if (_selectedSpeedPercent != target)
+                {
+                    _selectedSpeedPercent = target;
+                    OnPropertyChanged(nameof(SelectedSpeedPercent));
+                }
+            }
             OnPropertyChanged(nameof(TemperatureCelsius));
             OnPropertyChanged(nameof(SpeedPercent));
             OnPropertyChanged(nameof(Rpm));
@@ -189,16 +227,16 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
             OnPropertyChanged(nameof(ModeColorBrush));
             OnPropertyChanged(nameof(ConnectionColorBrush));
             OnPropertyChanged(nameof(ConnectionStatus));
-            OnPropertyChanged(nameof(FanCurve)); // trigger canvas redraw
+            OnPropertyChanged(nameof(FanCurve));
+            OnPropertyChanged(nameof(FanCurveSnapPoints));
         }
         catch (Exception ex)
         {
-            System.Console.WriteLine($"[PollStatusAsync] ERROR: {ex.Message}");
-            System.Diagnostics.Debug.WriteLine($"Poll error: {ex.Message}");
+            Diag.Log($"[Poll] ERROR: {ex.Message}");
         }
     }
 
-    private async System.Threading.Tasks.Task ApplyOverrideAsync()
+    private async Task ApplyOverrideAsync()
     {
         if (_provider == null) return;
         try
@@ -209,7 +247,7 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         catch { /* best effort */ }
     }
 
-    private async System.Threading.Tasks.Task ResetOverrideAsync()
+    private async Task ResetOverrideAsync()
     {
         if (_provider == null) return;
         try

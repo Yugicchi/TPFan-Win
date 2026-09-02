@@ -128,10 +128,12 @@ public class T480FanProvider : IDisposable
 
     public async Task<FanStatus> GetFanStatusAsync()
     {
+        // Atomic snapshot: read EC once and reuse, avoiding race
+        var ecSpeed = await GetFanSpeedPercentAsync();
         return new FanStatus
         {
             TemperatureCelsius = await GetCpuTemperatureAsync(),
-            SpeedPercent = await GetFanSpeedPercentAsync(),
+            SpeedPercent = ecSpeed,
             Rpm = await GetFanRpmAsync(),
             IsOverrideActive = _isOverrideActive,
             OverrideSpeedPercent = _isOverrideActive ? _lastFanSpeed : null,
@@ -201,7 +203,18 @@ public class T480FanProvider : IDisposable
     {
         if (_isOverrideActive && _fanController is not null)
         {
-            try { _fanController.ResetToAutoAsync().GetAwaiter().GetResult(); }
+            try
+            {
+                // Reset to auto with a hard timeout so Dispose can never hang
+                // on a dirty EC register state (previous shutdown was caused by
+                // this — the app blocked waiting for an EC write that never
+                // completed cleanly).
+                var reset = _fanController.ResetToAutoAsync();
+                if (!reset.Wait(2000))
+                {
+                    Diag.Log("[Provider] Dispose: ResetToAutoAsync timed out — proceeding with shutdown");
+                }
+            }
             catch { /* Dispose must not throw. */ }
         }
     }

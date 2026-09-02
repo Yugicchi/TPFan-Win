@@ -35,12 +35,22 @@ public sealed class SystemTrayManager : IDisposable
     private Form? _trayForm;
 
     private static SystemTrayManager? _instance; // singleton reference for static exit handler
+    private System.Windows.Window? _wpfMainWindow; // Direct WPF window reference for restore
 
     public SystemTrayManager(T480FanProvider fanProvider)
     {
         _fanProvider = fanProvider;
         _providerRef = fanProvider;
         _instance = this;
+    }
+
+    /// <summary>
+    /// Sets the WPF MainWindow reference so left-click on tray icon can restore it.
+    /// Call this from App.OnStartup after MainWindow is created.
+    /// </summary>
+    public void SetMainWindow(System.Windows.Window window)
+    {
+        _wpfMainWindow = window;
     }
 
     public void Start()
@@ -173,6 +183,37 @@ public sealed class SystemTrayManager : IDisposable
             Visible = true
         };
 
+        // Left-click = restore window; right-click = context menu (built-in)
+        _notifyIcon.MouseClick += (s, e) =>
+        {
+            if (e.Button == MouseButtons.Left)
+            {
+                // Marshal restore onto WPF dispatcher (STA) via hidden form invoke
+                try
+                {
+                    _trayForm?.Invoke(new Action(() =>
+                    {
+                        // Restore via the WPF MainWindow reference held by App/VM
+                        try
+                        {
+                            // Restore via direct WPF window reference (set by App)
+                            if (_wpfMainWindow != null)
+                            {
+                                _wpfMainWindow.Dispatcher.Invoke(() =>
+                                {
+                                    _wpfMainWindow.Show();
+                                    _wpfMainWindow.WindowState = System.Windows.WindowState.Normal;
+                                    _wpfMainWindow.Activate();
+                                });
+                            }
+                        }
+                        catch { /* best effort */ }
+                    }));
+                }
+                catch { /* best effort */ }
+            }
+        };
+
         // Hidden form provides a real HWND for Invoke/BeginInvoke so worker threads
         // can marshal updates onto the STA message loop that owns the tray.
         // Accessing .Handle forces handle creation; we hide it from taskbar/alt-tab.
@@ -268,7 +309,7 @@ public sealed class SystemTrayManager : IDisposable
             {
                 if (item is ToolStripMenuItem mi && mi.Text != null)
                 {
-                    mi.Checked = isOverride && mi.Text.Contains(targetText);
+                    mi.Checked = isOverride && mi.Text.Contains($"{speedPercent}%");
                 }
             }
         }

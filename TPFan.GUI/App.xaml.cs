@@ -89,6 +89,7 @@ public partial class App : System.Windows.Application
         // Show the main window manually now that the provider is available.
         var window = new MainWindow();
         MainWindow = window;
+        _trayManager?.SetMainWindow(window); // Direct reference for left-click restore
         window.Show();
     }
 
@@ -98,6 +99,11 @@ public partial class App : System.Windows.Application
         try
         {
             CurrentProvider?.Dispose();
+        }
+        catch { /* best effort */ }
+        try
+        {
+            CurrentEcController?.Dispose();
         }
         catch { /* best effort */ }
         try

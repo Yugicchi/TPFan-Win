@@ -1,1 +1,0 @@
-INSTRUCTION FOR USER: Copy these files from C:\Users\Yugicchi\Downloads\InpOutBinaries_1501 to the targets listed in copy_log.txt. Then run: sc query inpoutx64
