@@ -57,3 +57,4 @@
 ### Next
 - Test EC write end-to-end on actual T480 hardware
 - Add system tray integration
+[0.4.0] - 2026-09-02: EC dirty-shutdown mitigation, hysteresis tuning (1/1/5), systray restore, visual revisions, fan curve verify (6 pts); docs moved to docs/; known bugs tracked in GitHub issue.
